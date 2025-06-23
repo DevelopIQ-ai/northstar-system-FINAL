@@ -1,0 +1,186 @@
+{
+  "timestamp": "2025-06-23T14:14:39.519507",
+  "overall_status": "PASS",
+  "total_tests": 9,
+  "passed_tests": 9,
+  "failed_tests": 0,
+  "execution_time_ms": 3713,
+  "critical_failures": [],
+  "warnings": [],
+  "test_results": [
+    {
+      "test_name": "env_variables",
+      "passed": true,
+      "message": "\u2705 All required environment variables are present",
+      "execution_time_ms": 0,
+      "details": {
+        "microsoft_variables": {
+          "MS_CLIENT_ID": "\u2705 Present",
+          "MS_CLIENT_SECRET": "\u2705 Present",
+          "ENCRYPTED_REFRESH_TOKEN": "\u2705 Present",
+          "ENCRYPTION_KEY": "\u2705 Present"
+        },
+        "buildingconnected_variables": {
+          "AUTODESK_CLIENT_ID": "\u2705 Present",
+          "AUTODESK_CLIENT_SECRET": "\u2705 Present",
+          "AUTODESK_ENCRYPTED_REFRESH_TOKEN": "\u2705 Present",
+          "AUTODESK_ENCRYPTION_KEY": "\u2705 Present"
+        },
+        "missing_microsoft": [],
+        "missing_buildingconnected": []
+      }
+    },
+    {
+      "test_name": "token_manager_creation",
+      "passed": true,
+      "message": "\u2705 Both token managers created successfully",
+      "execution_time_ms": 0,
+      "details": {
+        "microsoft_success": true,
+        "microsoft_error": null,
+        "buildingconnected_success": true,
+        "buildingconnected_error": null
+      }
+    },
+    {
+      "test_name": "token_decryption",
+      "passed": true,
+      "message": "\u2705 Both refresh tokens decrypted successfully",
+      "execution_time_ms": 12,
+      "details": {
+        "microsoft_decrypt_success": true,
+        "microsoft_decrypt_error": null,
+        "buildingconnected_decrypt_success": true,
+        "buildingconnected_decrypt_error": null
+      }
+    },
+    {
+      "test_name": "token_refresh",
+      "passed": true,
+      "message": "\u2705 Both access tokens refreshed successfully",
+      "execution_time_ms": 804,
+      "details": {
+        "microsoft_refresh_success": true,
+        "microsoft_refresh_error": null,
+        "microsoft_token_info": {
+          "token_length": 1440,
+          "token_prefix": "EwA4BMl6BAAUBKgm8k1U...",
+          "expires_at": 1750716879079
+        },
+        "buildingconnected_refresh_success": true,
+        "buildingconnected_refresh_error": null,
+        "buildingconnected_token_info": {
+          "token_length": 896,
+          "token_prefix": "eyJhbGciOiJSUzI1NiIs...",
+          "expires_at": 1750717659334
+        }
+      }
+    },
+    {
+      "test_name": "api_client_creation",
+      "passed": true,
+      "message": "\u2705 Both API clients created successfully",
+      "execution_time_ms": 0,
+      "details": {
+        "microsoft_client_success": true,
+        "microsoft_client_error": null,
+        "buildingconnected_client_success": true,
+        "buildingconnected_client_error": null
+      }
+    },
+    {
+      "test_name": "authentication_endpoints",
+      "passed": true,
+      "message": "\u2705 Both API endpoints responding correctly",
+      "execution_time_ms": 1074,
+      "details": {
+        "microsoft_api_success": true,
+        "microsoft_api_error": null,
+        "microsoft_api_details": {
+          "response_keys": [
+            "@odata.context",
+            "value",
+            "@odata.nextLink"
+          ],
+          "has_value": true
+        },
+        "buildingconnected_api_success": true,
+        "buildingconnected_api_error": null,
+        "buildingconnected_api_details": {
+          "projects_found": 1,
+          "api_responsive": true,
+          "sample_project": "Shipley Do-Nuts - Build Out (Cypress)"
+        }
+      }
+    },
+    {
+      "test_name": "token_expiration",
+      "passed": true,
+      "message": "\u2705 Token expiration times are healthy",
+      "execution_time_ms": 0,
+      "details": {
+        "microsoft": {
+          "expires_at": 1750716879079,
+          "minutes_until_expiry": 59.96111666666667,
+          "expires_at_readable": "2025-06-23T22:14:39.079000+00:00"
+        },
+        "buildingconnected": {
+          "expires_at": 1750717659334,
+          "minutes_until_expiry": 72.96536666666667,
+          "expires_at_readable": "2025-06-23T22:27:39.334000+00:00"
+        }
+      }
+    },
+    {
+      "test_name": "rate_limiting",
+      "passed": true,
+      "message": "\u2705 Rate limiting resilience verified",
+      "execution_time_ms": 1391,
+      "details": {
+        "microsoft": {
+          "call_times_ms": [
+            141.88400000000001,
+            201.61200000000002,
+            157.775
+          ],
+          "avg_call_time_ms": 167.09033333333335
+        },
+        "buildingconnected": {
+          "call_times_ms": [
+            411.97299999999996,
+            477.974
+          ],
+          "avg_call_time_ms": 444.97349999999994
+        }
+      }
+    },
+    {
+      "test_name": "network_resilience",
+      "passed": true,
+      "message": "\u2705 Network connectivity verified",
+      "execution_time_ms": 428,
+      "details": {
+        "Microsoft Token Endpoint": {
+          "status_code": 200,
+          "response_time_ms": 191.56699999999998,
+          "reachable": true
+        },
+        "Microsoft Graph API": {
+          "status_code": 200,
+          "response_time_ms": 73.757,
+          "reachable": true
+        },
+        "Autodesk Token Endpoint": {
+          "status_code": 404,
+          "response_time_ms": 96.285,
+          "reachable": true
+        },
+        "BuildingConnected API": {
+          "status_code": 404,
+          "response_time_ms": 53.653,
+          "reachable": true
+        }
+      }
+    }
+  ]
+}
