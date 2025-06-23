@@ -84,7 +84,7 @@ class BidReminderAgent:
             logger.info("Testing BuildingConnected authentication by fetching test projects")
             try:
                 test_projects = await building_client.get_all_projects(limit=1)
-                logger.info(f"✅ BuildingConnected authentication verified - retrieved {len(test_projects.projects)} test projects")
+                logger.info(f"✅ BuildingConnected authentication verified - retrieved {len(test_projects)} test projects")
                 print(f"✅ BuildingConnected authentication verified - can access projects")
             except Exception as auth_test_error:
                 logger.error(f"❌ BuildingConnected authentication test failed: {str(auth_test_error)}")

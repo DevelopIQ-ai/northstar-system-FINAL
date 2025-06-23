@@ -1,0 +1,347 @@
+2025-06-23 09:47:05,528 - app - INFO - 🚀 Starting Bid Reminder Agent API...
+2025-06-23 09:47:05,528 - app - INFO - ✅ Environment properly configured
+2025-06-23 09:47:05,528 - app - INFO - 📖 API Documentation: http://localhost:8000/docs
+2025-06-23 09:47:32,745 - bid_reminder_agent - INFO - 📞 Called run_bid_reminder() convenience function
+2025-06-23 09:47:32,746 - bid_reminder_agent - INFO - BidReminderAgent initialized
+2025-06-23 09:47:32,746 - bid_reminder_agent - INFO - Default email recipient: kush@developiq.ai
+2025-06-23 09:47:32,746 - bid_reminder_agent - INFO - Days before bid to check: [5, 6, 7, 8, 9, 10]
+2025-06-23 09:47:32,746 - bid_reminder_agent - INFO - 🚀 Starting bid reminder workflow execution
+2025-06-23 09:47:32,746 - bid_reminder_agent - INFO - 🏗️  Building LangGraph workflow
+2025-06-23 09:47:32,748 - bid_reminder_agent - INFO - Adding workflow nodes:
+2025-06-23 09:47:32,749 - bid_reminder_agent - INFO -   - initialize_auth
+2025-06-23 09:47:32,750 - bid_reminder_agent - INFO -   - check_upcoming_projects
+2025-06-23 09:47:32,750 - bid_reminder_agent - INFO -   - finalize_result
+2025-06-23 09:47:32,750 - bid_reminder_agent - INFO - Adding workflow edges:
+2025-06-23 09:47:32,750 - bid_reminder_agent - INFO -   - START → initialize_auth
+2025-06-23 09:47:32,750 - bid_reminder_agent - INFO -   - initialize_auth → check_upcoming_projects OR finalize_result
+2025-06-23 09:47:32,750 - bid_reminder_agent - INFO -   - check_upcoming_projects → finalize_result
+2025-06-23 09:47:32,750 - bid_reminder_agent - INFO -   - finalize_result → END
+2025-06-23 09:47:32,750 - bid_reminder_agent - INFO - ✅ Workflow graph compiled successfully
+2025-06-23 09:47:32,752 - bid_reminder_agent - INFO - Initializing workflow state
+2025-06-23 09:47:32,752 - bid_reminder_agent - INFO - ✅ Initial state created
+2025-06-23 09:47:32,752 - bid_reminder_agent - INFO - 🔄 Executing LangGraph workflow...
+2025-06-23 09:47:32,757 - bid_reminder_agent - INFO - 🔐 Starting authentication initialization node
+2025-06-23 09:47:32,757 - bid_reminder_agent - INFO - Creating BuildingConnected token manager from environment
+2025-06-23 09:47:32,757 - bid_reminder_agent - INFO - ✅ BuildingConnected token manager created successfully
+2025-06-23 09:47:32,757 - bid_reminder_agent - INFO - Creating BuildingConnected client with token manager
+2025-06-23 09:47:32,757 - buildingconnected_client - INFO - BuildingConnectedClient initialized with base URL: https://developer.api.autodesk.com/construction/buildingconnected/v2
+2025-06-23 09:47:32,757 - bid_reminder_agent - INFO - ✅ BuildingConnected client created successfully
+2025-06-23 09:47:32,757 - bid_reminder_agent - INFO - Testing BuildingConnected authentication by fetching test projects
+2025-06-23 09:47:32,758 - buildingconnected_client - INFO - 📋 Getting all projects (limit: 1)
+2025-06-23 09:47:33,059 - httpx - INFO - HTTP Request: POST https://developer.api.autodesk.com/authentication/v2/token "HTTP/1.1 400 Bad Request"
+2025-06-23 09:47:33,060 - bid_reminder_agent - ERROR - ❌ BuildingConnected authentication test failed: BuildingConnected API Error 500: Unexpected error getting projects: Token refresh failed: 400 - {"error":"invalid_grant","error_description":"The refresh token is invalid or expired."}
+
+2025-06-23 09:47:33,061 - bid_reminder_agent - ERROR - ❌ Authentication initialization failed: BuildingConnected authentication test failed: BuildingConnected API Error 500: Unexpected error getting projects: Token refresh failed: 400 - {"error":"invalid_grant","error_description":"The refresh token is invalid or expired."}
+
+2025-06-23 09:47:33,063 - bid_reminder_agent - INFO - ➡️  Auth failed, routing to finalize_result
+2025-06-23 09:47:33,064 - bid_reminder_agent - INFO - 🏁 Starting finalize result node
+2025-06-23 09:47:33,064 - bid_reminder_agent - INFO - Projects found: 0
+2025-06-23 09:47:33,065 - bid_reminder_agent - INFO - Error message: Authentication failed: BuildingConnected authentication test failed: BuildingConnected API Error 500: Unexpected error getting projects: Token refresh failed: 400 - {"error":"invalid_grant","error_description":"The refresh token is invalid or expired."}
+
+2025-06-23 09:47:33,065 - bid_reminder_agent - ERROR - Workflow failed with error: Authentication failed: BuildingConnected authentication test failed: BuildingConnected API Error 500: Unexpected error getting projects: Token refresh failed: 400 - {"error":"invalid_grant","error_description":"The refresh token is invalid or expired."}
+
+2025-06-23 09:47:33,065 - bid_reminder_agent - INFO - 🏁 Finalize result node completed
+2025-06-23 09:47:33,066 - bid_reminder_agent - INFO - ✅ Workflow execution completed
+2025-06-23 09:47:33,066 - bid_reminder_agent - INFO - 📊 Workflow Results:
+2025-06-23 09:47:33,066 - bid_reminder_agent - INFO -   - Successful: False
+2025-06-23 09:54:12,647 - app - INFO - 🔄 Initiating graceful shutdown...
+2025-06-23 09:54:12,649 - app - INFO - ✅ Graceful shutdown completed
+2025-06-23 09:54:12,652 - __main__ - INFO - 🛑 Received signal 2. Initiating graceful shutdown...
+2025-06-23 09:54:12,655 - __main__ - INFO - 🔚 Server stopped
+2025-06-23 09:57:58,080 - app - INFO - 🚀 Starting Bid Reminder Agent API...
+2025-06-23 09:57:58,081 - app - INFO - ✅ Environment properly configured
+2025-06-23 09:57:58,081 - app - INFO - 📖 API Documentation: http://localhost:8000/docs
+2025-06-23 09:58:35,254 - bid_reminder_agent - INFO - 📞 Called run_bid_reminder() convenience function
+2025-06-23 09:58:35,254 - bid_reminder_agent - INFO - BidReminderAgent initialized
+2025-06-23 09:58:35,255 - bid_reminder_agent - INFO - Default email recipient: kush@developiq.ai
+2025-06-23 09:58:35,255 - bid_reminder_agent - INFO - Days before bid to check: [5, 6, 7, 8, 9, 10]
+2025-06-23 09:58:35,255 - bid_reminder_agent - INFO - 🚀 Starting bid reminder workflow execution
+2025-06-23 09:58:35,255 - bid_reminder_agent - INFO - 🏗️  Building LangGraph workflow
+2025-06-23 09:58:35,257 - bid_reminder_agent - INFO - Adding workflow nodes:
+2025-06-23 09:58:35,258 - bid_reminder_agent - INFO -   - initialize_auth
+2025-06-23 09:58:35,258 - bid_reminder_agent - INFO -   - check_upcoming_projects
+2025-06-23 09:58:35,258 - bid_reminder_agent - INFO -   - finalize_result
+2025-06-23 09:58:35,258 - bid_reminder_agent - INFO - Adding workflow edges:
+2025-06-23 09:58:35,259 - bid_reminder_agent - INFO -   - START → initialize_auth
+2025-06-23 09:58:35,259 - bid_reminder_agent - INFO -   - initialize_auth → check_upcoming_projects OR finalize_result
+2025-06-23 09:58:35,259 - bid_reminder_agent - INFO -   - check_upcoming_projects → finalize_result
+2025-06-23 09:58:35,259 - bid_reminder_agent - INFO -   - finalize_result → END
+2025-06-23 09:58:35,260 - bid_reminder_agent - INFO - ✅ Workflow graph compiled successfully
+2025-06-23 09:58:35,261 - bid_reminder_agent - INFO - Initializing workflow state
+2025-06-23 09:58:35,261 - bid_reminder_agent - INFO - ✅ Initial state created
+2025-06-23 09:58:35,261 - bid_reminder_agent - INFO - 🔄 Executing LangGraph workflow...
+2025-06-23 09:58:35,263 - bid_reminder_agent - INFO - 🔐 Starting authentication initialization node
+2025-06-23 09:58:35,264 - bid_reminder_agent - INFO - Creating BuildingConnected token manager from environment
+2025-06-23 09:58:35,264 - bid_reminder_agent - INFO - ✅ BuildingConnected token manager created successfully
+2025-06-23 09:58:35,264 - bid_reminder_agent - INFO - Creating BuildingConnected client with token manager
+2025-06-23 09:58:35,264 - buildingconnected_client - INFO - BuildingConnectedClient initialized with base URL: https://developer.api.autodesk.com/construction/buildingconnected/v2
+2025-06-23 09:58:35,264 - bid_reminder_agent - INFO - ✅ BuildingConnected client created successfully
+2025-06-23 09:58:35,264 - bid_reminder_agent - INFO - Testing BuildingConnected authentication by fetching test projects
+2025-06-23 09:58:35,264 - buildingconnected_client - INFO - 📋 Getting all projects (limit: 1)
+2025-06-23 09:58:35,532 - httpx - INFO - HTTP Request: POST https://developer.api.autodesk.com/authentication/v2/token "HTTP/1.1 200 OK"
+2025-06-23 09:58:35,540 - buildingconnected_client - INFO - 🔗 API Request: GET https://developer.api.autodesk.com/construction/buildingconnected/v2/projects
+2025-06-23 09:58:35,865 - httpx - INFO - HTTP Request: GET https://developer.api.autodesk.com/construction/buildingconnected/v2/projects?limit=1 "HTTP/1.1 401 Unauthorized"
+2025-06-23 09:58:35,866 - buildingconnected_client - INFO - 📡 Response: 401 Unauthorized
+2025-06-23 09:58:35,866 - buildingconnected_client - ERROR - ❌ Authentication failed - token may be expired
+2025-06-23 09:58:35,866 - bid_reminder_agent - ERROR - ❌ BuildingConnected authentication test failed: BuildingConnected API Error 401: Authentication required - token may be expired
+2025-06-23 09:58:35,866 - bid_reminder_agent - ERROR - ❌ Authentication initialization failed: BuildingConnected authentication test failed: BuildingConnected API Error 401: Authentication required - token may be expired
+2025-06-23 09:58:35,868 - bid_reminder_agent - INFO - ➡️  Auth failed, routing to finalize_result
+2025-06-23 09:58:35,869 - bid_reminder_agent - INFO - 🏁 Starting finalize result node
+2025-06-23 09:58:35,869 - bid_reminder_agent - INFO - Projects found: 0
+2025-06-23 09:58:35,869 - bid_reminder_agent - INFO - Error message: Authentication failed: BuildingConnected authentication test failed: BuildingConnected API Error 401: Authentication required - token may be expired
+2025-06-23 09:58:35,869 - bid_reminder_agent - ERROR - Workflow failed with error: Authentication failed: BuildingConnected authentication test failed: BuildingConnected API Error 401: Authentication required - token may be expired
+2025-06-23 09:58:35,869 - bid_reminder_agent - INFO - 🏁 Finalize result node completed
+2025-06-23 09:58:35,870 - bid_reminder_agent - INFO - ✅ Workflow execution completed
+2025-06-23 09:58:35,870 - bid_reminder_agent - INFO - 📊 Workflow Results:
+2025-06-23 09:58:35,871 - bid_reminder_agent - INFO -   - Successful: False
+2025-06-23 10:00:33,089 - app - INFO - 🔄 Initiating graceful shutdown...
+2025-06-23 10:00:33,091 - app - INFO - ✅ Graceful shutdown completed
+2025-06-23 10:00:33,092 - __main__ - INFO - 🛑 Received signal 2. Initiating graceful shutdown...
+2025-06-23 10:00:33,096 - __main__ - INFO - 🔚 Server stopped
+2025-06-23 10:01:12,203 - app - INFO - 🚀 Starting Bid Reminder Agent API...
+2025-06-23 10:01:12,203 - app - INFO - ✅ Environment properly configured
+2025-06-23 10:01:12,203 - app - INFO - 📖 API Documentation: http://localhost:8000/docs
+2025-06-23 10:01:20,943 - bid_reminder_agent - INFO - 📞 Called run_bid_reminder() convenience function
+2025-06-23 10:01:20,945 - bid_reminder_agent - INFO - BidReminderAgent initialized
+2025-06-23 10:01:20,945 - bid_reminder_agent - INFO - Default email recipient: kush@developiq.ai
+2025-06-23 10:01:20,945 - bid_reminder_agent - INFO - Days before bid to check: [5, 6, 7, 8, 9, 10]
+2025-06-23 10:01:20,945 - bid_reminder_agent - INFO - 🚀 Starting bid reminder workflow execution
+2025-06-23 10:01:20,945 - bid_reminder_agent - INFO - 🏗️  Building LangGraph workflow
+2025-06-23 10:01:20,945 - bid_reminder_agent - INFO - Adding workflow nodes:
+2025-06-23 10:01:20,945 - bid_reminder_agent - INFO -   - initialize_auth
+2025-06-23 10:01:20,946 - bid_reminder_agent - INFO -   - check_upcoming_projects
+2025-06-23 10:01:20,946 - bid_reminder_agent - INFO -   - finalize_result
+2025-06-23 10:01:20,946 - bid_reminder_agent - INFO - Adding workflow edges:
+2025-06-23 10:01:20,946 - bid_reminder_agent - INFO -   - START → initialize_auth
+2025-06-23 10:01:20,947 - bid_reminder_agent - INFO -   - initialize_auth → check_upcoming_projects OR finalize_result
+2025-06-23 10:01:20,947 - bid_reminder_agent - INFO -   - check_upcoming_projects → finalize_result
+2025-06-23 10:01:20,947 - bid_reminder_agent - INFO -   - finalize_result → END
+2025-06-23 10:01:20,947 - bid_reminder_agent - INFO - ✅ Workflow graph compiled successfully
+2025-06-23 10:01:20,949 - bid_reminder_agent - INFO - Initializing workflow state
+2025-06-23 10:01:20,950 - bid_reminder_agent - INFO - ✅ Initial state created
+2025-06-23 10:01:20,950 - bid_reminder_agent - INFO - 🔄 Executing LangGraph workflow...
+2025-06-23 10:01:20,953 - bid_reminder_agent - INFO - 🔐 Starting authentication initialization node
+2025-06-23 10:01:20,954 - bid_reminder_agent - INFO - Creating BuildingConnected token manager from environment
+2025-06-23 10:01:20,954 - bid_reminder_agent - INFO - ✅ BuildingConnected token manager created successfully
+2025-06-23 10:01:20,954 - bid_reminder_agent - INFO - Creating BuildingConnected client with token manager
+2025-06-23 10:01:20,954 - buildingconnected_client - INFO - BuildingConnectedClient initialized with base URL: https://developer.api.autodesk.com/construction/buildingconnected/v2
+2025-06-23 10:01:20,954 - bid_reminder_agent - INFO - ✅ BuildingConnected client created successfully
+2025-06-23 10:01:20,954 - bid_reminder_agent - INFO - Testing BuildingConnected authentication by fetching test projects
+2025-06-23 10:01:20,954 - buildingconnected_client - INFO - 📋 Getting all projects (limit: 1)
+2025-06-23 10:01:21,239 - httpx - INFO - HTTP Request: POST https://developer.api.autodesk.com/authentication/v2/token "HTTP/1.1 200 OK"
+2025-06-23 10:01:21,247 - buildingconnected_client - INFO - 🔗 API Request: GET https://developer.api.autodesk.com/construction/buildingconnected/v2/projects
+2025-06-23 10:01:21,376 - httpx - INFO - HTTP Request: GET https://developer.api.autodesk.com/construction/buildingconnected/v2/projects?limit=1 "HTTP/1.1 401 Unauthorized"
+2025-06-23 10:01:21,377 - buildingconnected_client - INFO - 📡 Response: 401 Unauthorized
+2025-06-23 10:01:21,377 - buildingconnected_client - ERROR - ❌ Authentication failed - token may be expired
+2025-06-23 10:01:21,377 - bid_reminder_agent - ERROR - ❌ BuildingConnected authentication test failed: BuildingConnected API Error 401: Authentication required - token may be expired
+2025-06-23 10:01:21,377 - bid_reminder_agent - ERROR - ❌ Authentication initialization failed: BuildingConnected authentication test failed: BuildingConnected API Error 401: Authentication required - token may be expired
+2025-06-23 10:01:21,382 - bid_reminder_agent - INFO - ➡️  Auth failed, routing to finalize_result
+2025-06-23 10:01:21,385 - bid_reminder_agent - INFO - 🏁 Starting finalize result node
+2025-06-23 10:01:21,385 - bid_reminder_agent - INFO - Projects found: 0
+2025-06-23 10:01:21,385 - bid_reminder_agent - INFO - Error message: Authentication failed: BuildingConnected authentication test failed: BuildingConnected API Error 401: Authentication required - token may be expired
+2025-06-23 10:01:21,385 - bid_reminder_agent - ERROR - Workflow failed with error: Authentication failed: BuildingConnected authentication test failed: BuildingConnected API Error 401: Authentication required - token may be expired
+2025-06-23 10:01:21,385 - bid_reminder_agent - INFO - 🏁 Finalize result node completed
+2025-06-23 10:01:21,386 - bid_reminder_agent - INFO - ✅ Workflow execution completed
+2025-06-23 10:01:21,386 - bid_reminder_agent - INFO - 📊 Workflow Results:
+2025-06-23 10:01:21,386 - bid_reminder_agent - INFO -   - Successful: False
+2025-06-23 10:02:31,920 - app - INFO - 🔄 Initiating graceful shutdown...
+2025-06-23 10:02:31,921 - app - INFO - ✅ Graceful shutdown completed
+2025-06-23 10:02:31,923 - __main__ - INFO - 🛑 Received signal 2. Initiating graceful shutdown...
+2025-06-23 10:02:31,928 - __main__ - INFO - 🔚 Server stopped
+2025-06-23 10:02:38,467 - app - INFO - 🚀 Starting Bid Reminder Agent API...
+2025-06-23 10:02:38,467 - app - INFO - ✅ Environment properly configured
+2025-06-23 10:02:38,467 - app - INFO - 📖 API Documentation: http://localhost:8000/docs
+2025-06-23 10:02:43,945 - bid_reminder_agent - INFO - 📞 Called run_bid_reminder() convenience function
+2025-06-23 10:02:43,945 - bid_reminder_agent - INFO - BidReminderAgent initialized
+2025-06-23 10:02:43,945 - bid_reminder_agent - INFO - Default email recipient: kush@developiq.ai
+2025-06-23 10:02:43,945 - bid_reminder_agent - INFO - Days before bid to check: [5, 6, 7, 8, 9, 10]
+2025-06-23 10:02:43,945 - bid_reminder_agent - INFO - 🚀 Starting bid reminder workflow execution
+2025-06-23 10:02:43,945 - bid_reminder_agent - INFO - 🏗️  Building LangGraph workflow
+2025-06-23 10:02:43,946 - bid_reminder_agent - INFO - Adding workflow nodes:
+2025-06-23 10:02:43,946 - bid_reminder_agent - INFO -   - initialize_auth
+2025-06-23 10:02:43,947 - bid_reminder_agent - INFO -   - check_upcoming_projects
+2025-06-23 10:02:43,947 - bid_reminder_agent - INFO -   - finalize_result
+2025-06-23 10:02:43,947 - bid_reminder_agent - INFO - Adding workflow edges:
+2025-06-23 10:02:43,947 - bid_reminder_agent - INFO -   - START → initialize_auth
+2025-06-23 10:02:43,947 - bid_reminder_agent - INFO -   - initialize_auth → check_upcoming_projects OR finalize_result
+2025-06-23 10:02:43,948 - bid_reminder_agent - INFO -   - check_upcoming_projects → finalize_result
+2025-06-23 10:02:43,948 - bid_reminder_agent - INFO -   - finalize_result → END
+2025-06-23 10:02:43,948 - bid_reminder_agent - INFO - ✅ Workflow graph compiled successfully
+2025-06-23 10:02:43,951 - bid_reminder_agent - INFO - Initializing workflow state
+2025-06-23 10:02:43,951 - bid_reminder_agent - INFO - ✅ Initial state created
+2025-06-23 10:02:43,951 - bid_reminder_agent - INFO - 🔄 Executing LangGraph workflow...
+2025-06-23 10:02:43,956 - bid_reminder_agent - INFO - 🔐 Starting authentication initialization node
+2025-06-23 10:02:43,956 - bid_reminder_agent - INFO - Creating BuildingConnected token manager from environment
+2025-06-23 10:02:43,957 - bid_reminder_agent - INFO - ✅ BuildingConnected token manager created successfully
+2025-06-23 10:02:43,957 - bid_reminder_agent - INFO - Creating BuildingConnected client with token manager
+2025-06-23 10:02:43,957 - buildingconnected_client - INFO - BuildingConnectedClient initialized with base URL: https://developer.api.autodesk.com/construction/buildingconnected/v2
+2025-06-23 10:02:43,957 - bid_reminder_agent - INFO - ✅ BuildingConnected client created successfully
+2025-06-23 10:02:43,957 - bid_reminder_agent - INFO - Testing BuildingConnected authentication by fetching test projects
+2025-06-23 10:02:43,957 - buildingconnected_client - INFO - 📋 Getting all projects (limit: 1)
+2025-06-23 10:02:44,217 - httpx - INFO - HTTP Request: POST https://developer.api.autodesk.com/authentication/v2/token "HTTP/1.1 200 OK"
+2025-06-23 10:02:44,227 - buildingconnected_client - INFO - 🔗 API Request: GET https://developer.api.autodesk.com/construction/buildingconnected/v2/projects
+2025-06-23 10:02:44,710 - httpx - INFO - HTTP Request: GET https://developer.api.autodesk.com/construction/buildingconnected/v2/projects?limit=1 "HTTP/1.1 200 OK"
+2025-06-23 10:02:44,711 - buildingconnected_client - INFO - 📡 Response: 200 OK
+2025-06-23 10:02:44,711 - buildingconnected_client - INFO - 📋 Processing 1 projects from API
+2025-06-23 10:02:44,712 - buildingconnected_client - INFO - ✅ Retrieved 1 projects
+2025-06-23 10:02:44,712 - bid_reminder_agent - ERROR - ❌ BuildingConnected authentication test failed: 'list' object has no attribute 'projects'
+2025-06-23 10:02:44,713 - bid_reminder_agent - ERROR - ❌ Authentication initialization failed: BuildingConnected authentication test failed: 'list' object has no attribute 'projects'
+2025-06-23 10:02:44,715 - bid_reminder_agent - INFO - ➡️  Auth failed, routing to finalize_result
+2025-06-23 10:02:44,716 - bid_reminder_agent - INFO - 🏁 Starting finalize result node
+2025-06-23 10:02:44,716 - bid_reminder_agent - INFO - Projects found: 0
+2025-06-23 10:02:44,716 - bid_reminder_agent - INFO - Error message: Authentication failed: BuildingConnected authentication test failed: 'list' object has no attribute 'projects'
+2025-06-23 10:02:44,716 - bid_reminder_agent - ERROR - Workflow failed with error: Authentication failed: BuildingConnected authentication test failed: 'list' object has no attribute 'projects'
+2025-06-23 10:02:44,716 - bid_reminder_agent - INFO - 🏁 Finalize result node completed
+2025-06-23 10:02:44,717 - bid_reminder_agent - INFO - ✅ Workflow execution completed
+2025-06-23 10:02:44,717 - bid_reminder_agent - INFO - 📊 Workflow Results:
+2025-06-23 10:02:44,717 - bid_reminder_agent - INFO -   - Successful: False
+2025-06-23 10:04:25,267 - app - INFO - 🔄 Initiating graceful shutdown...
+2025-06-23 10:04:25,267 - app - INFO - ✅ Graceful shutdown completed
+2025-06-23 10:04:25,269 - __main__ - INFO - 🛑 Received signal 2. Initiating graceful shutdown...
+2025-06-23 10:04:25,272 - __main__ - INFO - 🔚 Server stopped
+2025-06-23 10:05:32,746 - __main__ - INFO - ==================================================
+2025-06-23 10:05:32,746 - __main__ - INFO - 🚀 STARTING BID REMINDER AGENT
+2025-06-23 10:05:32,746 - __main__ - INFO - ==================================================
+2025-06-23 10:05:32,746 - __main__ - INFO - 📞 Called run_bid_reminder() convenience function
+2025-06-23 10:05:32,746 - __main__ - INFO - BidReminderAgent initialized
+2025-06-23 10:05:32,746 - __main__ - INFO - Default email recipient: kush@developiq.ai
+2025-06-23 10:05:32,746 - __main__ - INFO - Days before bid to check: [5, 6, 7, 8, 9, 10]
+2025-06-23 10:05:32,746 - __main__ - INFO - 🚀 Starting bid reminder workflow execution
+2025-06-23 10:05:32,746 - __main__ - INFO - 🏗️  Building LangGraph workflow
+2025-06-23 10:05:32,746 - __main__ - INFO - Adding workflow nodes:
+2025-06-23 10:05:32,746 - __main__ - INFO -   - initialize_auth
+2025-06-23 10:05:32,746 - __main__ - INFO -   - check_upcoming_projects
+2025-06-23 10:05:32,746 - __main__ - INFO -   - finalize_result
+2025-06-23 10:05:32,746 - __main__ - INFO - Adding workflow edges:
+2025-06-23 10:05:32,746 - __main__ - INFO -   - START → initialize_auth
+2025-06-23 10:05:32,746 - __main__ - INFO -   - initialize_auth → check_upcoming_projects OR finalize_result
+2025-06-23 10:05:32,746 - __main__ - INFO -   - check_upcoming_projects → finalize_result
+2025-06-23 10:05:32,746 - __main__ - INFO -   - finalize_result → END
+2025-06-23 10:05:32,746 - __main__ - INFO - ✅ Workflow graph compiled successfully
+2025-06-23 10:05:32,747 - __main__ - INFO - Initializing workflow state
+2025-06-23 10:05:32,747 - __main__ - INFO - ✅ Initial state created
+2025-06-23 10:05:32,747 - __main__ - INFO - 🔄 Executing LangGraph workflow...
+2025-06-23 10:05:32,748 - __main__ - INFO - 🔐 Starting authentication initialization node
+2025-06-23 10:05:32,748 - __main__ - INFO - Creating BuildingConnected token manager from environment
+2025-06-23 10:05:32,748 - __main__ - INFO - ✅ BuildingConnected token manager created successfully
+2025-06-23 10:05:32,748 - __main__ - INFO - Creating BuildingConnected client with token manager
+2025-06-23 10:05:32,748 - buildingconnected_client - INFO - BuildingConnectedClient initialized with base URL: https://developer.api.autodesk.com/construction/buildingconnected/v2
+2025-06-23 10:05:32,748 - __main__ - INFO - ✅ BuildingConnected client created successfully
+2025-06-23 10:05:32,748 - __main__ - INFO - Testing BuildingConnected authentication by fetching test projects
+2025-06-23 10:05:32,748 - buildingconnected_client - INFO - 📋 Getting all projects (limit: 1)
+2025-06-23 10:05:33,012 - httpx - INFO - HTTP Request: POST https://developer.api.autodesk.com/authentication/v2/token "HTTP/1.1 200 OK"
+2025-06-23 10:05:33,020 - buildingconnected_client - INFO - 🔗 API Request: GET https://developer.api.autodesk.com/construction/buildingconnected/v2/projects
+2025-06-23 10:05:33,481 - httpx - INFO - HTTP Request: GET https://developer.api.autodesk.com/construction/buildingconnected/v2/projects?limit=1 "HTTP/1.1 200 OK"
+2025-06-23 10:05:33,482 - buildingconnected_client - INFO - 📡 Response: 200 OK
+2025-06-23 10:05:33,482 - buildingconnected_client - INFO - 📋 Processing 1 projects from API
+2025-06-23 10:05:33,482 - buildingconnected_client - INFO - ✅ Retrieved 1 projects
+2025-06-23 10:05:33,482 - __main__ - INFO - ✅ BuildingConnected authentication verified - retrieved 1 test projects
+2025-06-23 10:05:33,483 - __main__ - INFO - ✅ Authentication node completed successfully
+2025-06-23 10:05:33,484 - __main__ - INFO - ➡️  Auth successful, routing to check_upcoming_projects
+2025-06-23 10:05:33,485 - __main__ - INFO - 📋 Starting project check node
+2025-06-23 10:05:33,485 - __main__ - INFO - Checking projects due in [5, 6, 7, 8, 9, 10] days
+2025-06-23 10:05:33,485 - __main__ - INFO - Fetching projects due in 5 days
+2025-06-23 10:05:33,485 - buildingconnected_client - INFO - 📅 Getting projects due in 5 days
+2025-06-23 10:05:33,485 - buildingconnected_client - INFO - 🎯 Target date range: 2025-06-28 to 2025-06-28 23:59:59
+2025-06-23 10:05:33,485 - buildingconnected_client - INFO - 📋 Fetching all projects to filter by date
+2025-06-23 10:05:33,485 - buildingconnected_client - INFO - 📋 Getting all projects (limit: 100)
+2025-06-23 10:05:33,485 - buildingconnected_client - INFO - 🔗 API Request: GET https://developer.api.autodesk.com/construction/buildingconnected/v2/projects
+2025-06-23 10:05:34,745 - httpx - INFO - HTTP Request: GET https://developer.api.autodesk.com/construction/buildingconnected/v2/projects?limit=100 "HTTP/1.1 200 OK"
+2025-06-23 10:05:34,820 - buildingconnected_client - INFO - 📡 Response: 200 OK
+2025-06-23 10:05:34,822 - buildingconnected_client - INFO - 📋 Processing 82 projects from API
+2025-06-23 10:05:34,827 - buildingconnected_client - INFO - ✅ Retrieved 82 projects
+2025-06-23 10:05:34,828 - buildingconnected_client - INFO - 📋 Retrieved 82 total projects for filtering
+2025-06-23 10:05:34,828 - buildingconnected_client - INFO - 🔍 Filtering projects by target date
+2025-06-23 10:05:34,828 - buildingconnected_client - INFO - ✅ Found 0 projects due in 5 days
+2025-06-23 10:05:34,828 - __main__ - INFO - Found 0 projects due in 5 days
+2025-06-23 10:05:34,828 - __main__ - INFO - Fetching projects due in 6 days
+2025-06-23 10:05:34,828 - buildingconnected_client - INFO - 📅 Getting projects due in 6 days
+2025-06-23 10:05:34,828 - buildingconnected_client - INFO - 🎯 Target date range: 2025-06-29 to 2025-06-29 23:59:59
+2025-06-23 10:05:34,828 - buildingconnected_client - INFO - 📋 Fetching all projects to filter by date
+2025-06-23 10:05:34,829 - buildingconnected_client - INFO - 📋 Getting all projects (limit: 100)
+2025-06-23 10:05:34,829 - buildingconnected_client - INFO - 🔗 API Request: GET https://developer.api.autodesk.com/construction/buildingconnected/v2/projects
+2025-06-23 10:05:35,769 - httpx - INFO - HTTP Request: GET https://developer.api.autodesk.com/construction/buildingconnected/v2/projects?limit=100 "HTTP/1.1 200 OK"
+2025-06-23 10:05:35,837 - buildingconnected_client - INFO - 📡 Response: 200 OK
+2025-06-23 10:05:35,840 - buildingconnected_client - INFO - 📋 Processing 82 projects from API
+2025-06-23 10:05:35,841 - buildingconnected_client - INFO - ✅ Retrieved 82 projects
+2025-06-23 10:05:35,841 - buildingconnected_client - INFO - 📋 Retrieved 82 total projects for filtering
+2025-06-23 10:05:35,841 - buildingconnected_client - INFO - 🔍 Filtering projects by target date
+2025-06-23 10:05:35,842 - buildingconnected_client - INFO - ✅ Found 0 projects due in 6 days
+2025-06-23 10:05:35,843 - __main__ - INFO - Found 0 projects due in 6 days
+2025-06-23 10:05:35,843 - __main__ - INFO - Fetching projects due in 7 days
+2025-06-23 10:05:35,843 - buildingconnected_client - INFO - 📅 Getting projects due in 7 days
+2025-06-23 10:05:35,843 - buildingconnected_client - INFO - 🎯 Target date range: 2025-06-30 to 2025-06-30 23:59:59
+2025-06-23 10:05:35,843 - buildingconnected_client - INFO - 📋 Fetching all projects to filter by date
+2025-06-23 10:05:35,843 - buildingconnected_client - INFO - 📋 Getting all projects (limit: 100)
+2025-06-23 10:05:35,843 - buildingconnected_client - INFO - 🔗 API Request: GET https://developer.api.autodesk.com/construction/buildingconnected/v2/projects
+2025-06-23 10:05:36,613 - httpx - INFO - HTTP Request: GET https://developer.api.autodesk.com/construction/buildingconnected/v2/projects?limit=100 "HTTP/1.1 200 OK"
+2025-06-23 10:05:36,685 - buildingconnected_client - INFO - 📡 Response: 200 OK
+2025-06-23 10:05:36,687 - buildingconnected_client - INFO - 📋 Processing 82 projects from API
+2025-06-23 10:05:36,688 - buildingconnected_client - INFO - ✅ Retrieved 82 projects
+2025-06-23 10:05:36,688 - buildingconnected_client - INFO - 📋 Retrieved 82 total projects for filtering
+2025-06-23 10:05:36,688 - buildingconnected_client - INFO - 🔍 Filtering projects by target date
+2025-06-23 10:05:36,688 - buildingconnected_client - INFO -   ✅ Match: DevelopIQ due 2025-06-30 17:00
+2025-06-23 10:05:36,689 - buildingconnected_client - INFO - ✅ Found 1 projects due in 7 days
+2025-06-23 10:05:36,689 - __main__ - INFO - Found 1 projects due in 7 days
+2025-06-23 10:05:36,689 - __main__ - INFO - Fetching projects due in 8 days
+2025-06-23 10:05:36,689 - buildingconnected_client - INFO - 📅 Getting projects due in 8 days
+2025-06-23 10:05:36,689 - buildingconnected_client - INFO - 🎯 Target date range: 2025-07-01 to 2025-07-01 23:59:59
+2025-06-23 10:05:36,689 - buildingconnected_client - INFO - 📋 Fetching all projects to filter by date
+2025-06-23 10:05:36,689 - buildingconnected_client - INFO - 📋 Getting all projects (limit: 100)
+2025-06-23 10:05:36,689 - buildingconnected_client - INFO - 🔗 API Request: GET https://developer.api.autodesk.com/construction/buildingconnected/v2/projects
+2025-06-23 10:05:38,568 - httpx - INFO - HTTP Request: GET https://developer.api.autodesk.com/construction/buildingconnected/v2/projects?limit=100 "HTTP/1.1 200 OK"
+2025-06-23 10:05:38,636 - buildingconnected_client - INFO - 📡 Response: 200 OK
+2025-06-23 10:05:38,639 - buildingconnected_client - INFO - 📋 Processing 82 projects from API
+2025-06-23 10:05:38,640 - buildingconnected_client - INFO - ✅ Retrieved 82 projects
+2025-06-23 10:05:38,640 - buildingconnected_client - INFO - 📋 Retrieved 82 total projects for filtering
+2025-06-23 10:05:38,640 - buildingconnected_client - INFO - 🔍 Filtering projects by target date
+2025-06-23 10:05:38,641 - buildingconnected_client - INFO - ✅ Found 0 projects due in 8 days
+2025-06-23 10:05:38,641 - __main__ - INFO - Found 0 projects due in 8 days
+2025-06-23 10:05:38,641 - __main__ - INFO - Fetching projects due in 9 days
+2025-06-23 10:05:38,641 - buildingconnected_client - INFO - 📅 Getting projects due in 9 days
+2025-06-23 10:05:38,641 - buildingconnected_client - INFO - 🎯 Target date range: 2025-07-02 to 2025-07-02 23:59:59
+2025-06-23 10:05:38,641 - buildingconnected_client - INFO - 📋 Fetching all projects to filter by date
+2025-06-23 10:05:38,641 - buildingconnected_client - INFO - 📋 Getting all projects (limit: 100)
+2025-06-23 10:05:38,641 - buildingconnected_client - INFO - 🔗 API Request: GET https://developer.api.autodesk.com/construction/buildingconnected/v2/projects
+2025-06-23 10:05:39,699 - httpx - INFO - HTTP Request: GET https://developer.api.autodesk.com/construction/buildingconnected/v2/projects?limit=100 "HTTP/1.1 200 OK"
+2025-06-23 10:05:39,767 - buildingconnected_client - INFO - 📡 Response: 200 OK
+2025-06-23 10:05:39,771 - buildingconnected_client - INFO - 📋 Processing 82 projects from API
+2025-06-23 10:05:39,772 - buildingconnected_client - INFO - ✅ Retrieved 82 projects
+2025-06-23 10:05:39,772 - buildingconnected_client - INFO - 📋 Retrieved 82 total projects for filtering
+2025-06-23 10:05:39,772 - buildingconnected_client - INFO - 🔍 Filtering projects by target date
+2025-06-23 10:05:39,773 - buildingconnected_client - INFO - ✅ Found 0 projects due in 9 days
+2025-06-23 10:05:39,773 - __main__ - INFO - Found 0 projects due in 9 days
+2025-06-23 10:05:39,773 - __main__ - INFO - Fetching projects due in 10 days
+2025-06-23 10:05:39,773 - buildingconnected_client - INFO - 📅 Getting projects due in 10 days
+2025-06-23 10:05:39,773 - buildingconnected_client - INFO - 🎯 Target date range: 2025-07-03 to 2025-07-03 23:59:59
+2025-06-23 10:05:39,773 - buildingconnected_client - INFO - 📋 Fetching all projects to filter by date
+2025-06-23 10:05:39,773 - buildingconnected_client - INFO - 📋 Getting all projects (limit: 100)
+2025-06-23 10:05:39,773 - buildingconnected_client - INFO - 🔗 API Request: GET https://developer.api.autodesk.com/construction/buildingconnected/v2/projects
+2025-06-23 10:05:40,603 - httpx - INFO - HTTP Request: GET https://developer.api.autodesk.com/construction/buildingconnected/v2/projects?limit=100 "HTTP/1.1 200 OK"
+2025-06-23 10:05:40,677 - buildingconnected_client - INFO - 📡 Response: 200 OK
+2025-06-23 10:05:40,679 - buildingconnected_client - INFO - 📋 Processing 82 projects from API
+2025-06-23 10:05:40,680 - buildingconnected_client - INFO - ✅ Retrieved 82 projects
+2025-06-23 10:05:40,680 - buildingconnected_client - INFO - 📋 Retrieved 82 total projects for filtering
+2025-06-23 10:05:40,680 - buildingconnected_client - INFO - 🔍 Filtering projects by target date
+2025-06-23 10:05:40,680 - buildingconnected_client - INFO - ✅ Found 0 projects due in 10 days
+2025-06-23 10:05:40,681 - __main__ - INFO - Found 0 projects due in 10 days
+2025-06-23 10:05:40,681 - __main__ - INFO - Total projects found across all days: 1
+2025-06-23 10:05:40,681 - __main__ - INFO - Removing duplicate projects
+2025-06-23 10:05:40,681 - __main__ - INFO - ✅ Project check completed: 1 unique projects found
+2025-06-23 10:05:40,681 - __main__ - INFO -   - DevelopIQ | Due: 2025-06-30T17:00:00.000Z | State: PUBLISHED
+2025-06-23 10:05:40,683 - __main__ - INFO - ➡️  Projects checked, routing to finalize_result
+2025-06-23 10:05:40,684 - __main__ - INFO - 🏁 Starting finalize result node
+2025-06-23 10:05:40,684 - __main__ - INFO - Projects found: 1
+2025-06-23 10:05:40,684 - __main__ - INFO - Error message: None
+2025-06-23 10:05:40,684 - __main__ - INFO - ✅ Workflow completed successfully with 1 projects
+2025-06-23 10:05:40,684 - __main__ - INFO - 🏁 Finalize result node completed
+2025-06-23 10:05:40,685 - __main__ - INFO - ✅ Workflow execution completed
+2025-06-23 10:05:40,685 - __main__ - INFO - 📊 Workflow Results:
+2025-06-23 10:05:40,686 - __main__ - INFO -   - Successful: True
+2025-06-23 10:05:40,686 - __main__ - INFO -   - Projects found: 1
+2025-06-23 10:05:40,686 - __main__ - INFO -   - Email sent: False
+2025-06-23 10:05:40,686 - __main__ - INFO - ==================================================
+2025-06-23 10:05:40,686 - __main__ - INFO - 📋 FINAL RESULTS
+2025-06-23 10:05:40,686 - __main__ - INFO - ==================================================
+2025-06-23 10:05:40,686 - __main__ - INFO - 🏁 BID REMINDER AGENT COMPLETED
+2025-06-23 10:05:40,686 - __main__ - INFO - ==================================================

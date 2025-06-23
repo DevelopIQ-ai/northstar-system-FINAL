@@ -87,9 +87,12 @@ class BuildingConnectedClient:
         logger.debug("✅ Retrieved access token from token manager")
         
         headers = {
-            'Authorization': f'Bearer {access_token[:20]}...',  # Log partial token for security
+            'Authorization': f'Bearer {access_token}',
             'Content-Type': 'application/json'
         }
+        
+        # Log partial token for security (but use full token in headers)
+        logger.debug(f"🔑 Using Bearer token: {access_token[:20]}...")
         
         url = f"{self.base_url}/{path.lstrip('/')}"
         logger.info(f"🔗 API Request: {method.upper()} {url}")

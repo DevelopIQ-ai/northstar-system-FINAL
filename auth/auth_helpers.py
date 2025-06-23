@@ -89,7 +89,7 @@ class TokenManager:
         
         token_data = {
             'client_id': self.client_id,
-            'client_secret': self.client_secret,
+            'client_secret': self.client_secret, 
             'grant_type': 'refresh_token',
             'refresh_token': refresh_token,
             'scope': self.scope
@@ -117,7 +117,63 @@ class TokenManager:
                 refresh_token=token_response.get('refresh_token')  # May update
             )
             
+            # Update stored refresh token if a new one was provided (Autodesk rotates refresh tokens)
+            if self._cached_token.refresh_token and self._cached_token.refresh_token != refresh_token:
+                await self._update_stored_refresh_token(self._cached_token.refresh_token)
+            
             return self._cached_token.access_token
+    
+    async def _update_stored_refresh_token(self, new_refresh_token: str) -> None:
+        """Update the stored refresh token with new encrypted value"""
+        try:
+            # Encrypt the new refresh token
+            encrypted_token = self._encrypt_token(new_refresh_token)
+            
+            # Update environment variable in .env file
+            from dotenv import set_key
+            
+            # Determine which env var to update based on token manager type
+            if isinstance(self, BuildingConnectedTokenManager):
+                env_var = 'AUTODESK_ENCRYPTED_REFRESH_TOKEN'
+            else:
+                env_var = 'ENCRYPTED_REFRESH_TOKEN'
+            
+            set_key('.env', env_var, encrypted_token)
+            
+            # Update instance variable
+            self.encrypted_refresh_token = encrypted_token
+            
+        except Exception as e:
+            # Log the error but don't fail the token refresh
+            print(f"Warning: Failed to update stored refresh token: {str(e)}")
+    
+    def _encrypt_token(self, token: str) -> str:
+        """Encrypt a token using AES-CBC (same logic as oauth_setup.py)"""
+        import os
+        import hashlib
+        
+        # Generate random IV
+        iv = os.urandom(16)
+        
+        # Create key from encryption key string using SHA-256
+        key_hash = hashlib.sha256(self.encryption_key.encode()).digest()
+        
+        # Pad the token to 16-byte boundary (PKCS7 padding)  
+        token_bytes = token.encode('utf-8')
+        padding_length = 16 - (len(token_bytes) % 16)
+        padded_token = token_bytes + bytes([padding_length] * padding_length)
+        
+        # Encrypt using AES-CBC
+        cipher = Cipher(
+            algorithms.AES(key_hash),
+            modes.CBC(iv),
+            backend=default_backend()
+        )
+        encryptor = cipher.encryptor()
+        encrypted = encryptor.update(padded_token) + encryptor.finalize()
+        
+        # Return IV and encrypted data as hex strings separated by colon
+        return f"{iv.hex()}:{encrypted.hex()}"
 
 
 class MSGraphTokenManager(TokenManager):
