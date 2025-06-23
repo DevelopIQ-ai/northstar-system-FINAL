@@ -38,7 +38,7 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     handlers=[
         logging.StreamHandler(),
-        logging.FileHandler('test-suite/auth-health-check.log')
+        logging.FileHandler('logs/auth-health-check.log')
     ]
 )
 logger = logging.getLogger(__name__)
@@ -157,11 +157,12 @@ class AuthHealthChecker:
         
         start_time = datetime.now()
         
-        # Test Microsoft Graph token manager
+        # Test Microsoft Graph token manager (or use existing)
         ms_success = False
         ms_error = None
         try:
-            self.ms_token_manager = create_token_manager_from_env()
+            if not self.ms_token_manager:
+                self.ms_token_manager = create_token_manager_from_env()
             ms_success = True
             logger.info("   ✅ Microsoft Graph token manager created successfully")
         except Exception as e:
@@ -169,11 +170,12 @@ class AuthHealthChecker:
             self.critical_failures.append(f"Failed to create MS Graph token manager: {ms_error}")
             logger.error(f"   ❌ Microsoft Graph token manager creation failed: {ms_error}")
         
-        # Test BuildingConnected token manager
+        # Test BuildingConnected token manager (or use existing)
         bc_success = False
         bc_error = None
         try:
-            self.bc_token_manager = create_buildingconnected_token_manager_from_env()
+            if not self.bc_token_manager:
+                self.bc_token_manager = create_buildingconnected_token_manager_from_env()
             bc_success = True
             logger.info("   ✅ BuildingConnected token manager created successfully")
         except Exception as e:
@@ -222,7 +224,7 @@ class AuthHealthChecker:
         bc_decrypt_error = None
         try:
             # Use persistent token manager if available, otherwise create new one
-            bc_token_manager = self.bc_token_manager or self.bc_token_manager or create_buildingconnected_token_manager_from_env()
+            bc_token_manager = self.bc_token_manager or create_buildingconnected_token_manager_from_env()
             decrypted_bc_token = await bc_token_manager.decrypt_refresh_token()
             if decrypted_bc_token and len(decrypted_bc_token) > 10:  # Basic validation
                 bc_decrypt_success = True
@@ -260,7 +262,7 @@ class AuthHealthChecker:
         ms_token_info = {}
         try:
             # Use persistent token manager if available, otherwise create new one
-            ms_token_manager = self.ms_token_manager or self.ms_token_manager or create_token_manager_from_env()
+            ms_token_manager = self.ms_token_manager or create_token_manager_from_env()
             access_token = await ms_token_manager.get_access_token()
             if access_token and len(access_token) > 50:  # Basic validation
                 ms_refresh_success = True
@@ -284,7 +286,7 @@ class AuthHealthChecker:
         bc_token_info = {}
         try:
             # Use persistent token manager if available, otherwise create new one
-            bc_token_manager = self.bc_token_manager or self.bc_token_manager or create_buildingconnected_token_manager_from_env()
+            bc_token_manager = self.bc_token_manager or create_buildingconnected_token_manager_from_env()
             access_token = await bc_token_manager.get_access_token()
             if access_token and len(access_token) > 50:  # Basic validation
                 bc_refresh_success = True
@@ -382,7 +384,7 @@ class AuthHealthChecker:
         ms_api_details = {}
         try:
             # Use persistent token manager if available, otherwise create new one
-            ms_token_manager = self.ms_token_manager or self.ms_token_manager or create_token_manager_from_env()
+            ms_token_manager = self.ms_token_manager or create_token_manager_from_env()
             ms_client = MSGraphClient(ms_token_manager)
             
             # Try a simple API call (list recent emails with limit 1)
@@ -411,7 +413,7 @@ class AuthHealthChecker:
         bc_api_details = {}
         try:
             # Use persistent token manager if available, otherwise create new one
-            bc_token_manager = self.bc_token_manager or self.bc_token_manager or create_buildingconnected_token_manager_from_env()
+            bc_token_manager = self.bc_token_manager or create_buildingconnected_token_manager_from_env()
             bc_client = BuildingConnectedClient(bc_token_manager)
             
             # Try a simple API call (get projects - more reliable than user info)
@@ -727,9 +729,9 @@ def print_health_report(report: HealthCheckReport):
         }
         
         timestamp_str = datetime.now().strftime("%Y%m%d_%H%M%S")
-        report_file = f"test-suite/auth-health-report-{timestamp_str}.json"
+        report_file = f"logs/auth-health-report-{timestamp_str}.json"
         
-        os.makedirs("test-suite", exist_ok=True)
+        os.makedirs("logs", exist_ok=True)
         with open(report_file, 'w') as f:
             json.dump(report_dict, f, indent=2)
         
