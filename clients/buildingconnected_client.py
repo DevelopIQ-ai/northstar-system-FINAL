@@ -358,7 +358,18 @@ class BuildingConnectedClient:
             
         Returns:
             Project object with details or None if not found
+            
+        Raises:
+            ValueError: If project_id is empty, None, or not a string
         """
+        # Validate project_id
+        if not project_id or not isinstance(project_id, str):
+            raise ValueError("project_id is required and must be a non-empty string")
+        
+        project_id = project_id.strip()
+        if not project_id:
+            raise ValueError("project_id cannot be empty or whitespace only")
+        
         try:
             response = await self._make_request('GET', f'projects/{project_id}')
             
@@ -417,11 +428,19 @@ class BuildingConnectedClient:
             
         Returns:
             List of BiddingInvitationData objects
+            
+        Raises:
+            ValueError: If project_id is empty, None, or not a string
         """
         logger.info(f"🎯 Generating bidding invitations for project {project_id}")
         
+        # Validate project_id
         if not project_id or not isinstance(project_id, str):
-            raise ValueError("project_id is required and must be a string")
+            raise ValueError("project_id is required and must be a non-empty string")
+        
+        project_id = project_id.strip()
+        if not project_id:
+            raise ValueError("project_id cannot be empty or whitespace only")
         
         try:
             # Step 1: Get project details to extract bid due date
