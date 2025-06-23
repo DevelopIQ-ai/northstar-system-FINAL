@@ -58,7 +58,7 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     handlers=[
         logging.StreamHandler(),
-        logging.FileHandler('test-suite/auth-8am-preflight.log')
+        logging.FileHandler('logs/auth-8am-preflight.log')
     ]
 )
 logger = logging.getLogger(__name__)
@@ -650,7 +650,7 @@ def print_preflight_report(report: PreFlightReport):
     # Save detailed report
     try:
         timestamp_str = datetime.now().strftime("%Y%m%d_%H%M%S")
-        report_file = f"test-suite/auth-8am-preflight-{timestamp_str}.json"
+        report_file = f"logs/auth-8am-preflight-{timestamp_str}.json"
         
         # Convert dataclasses to dicts for JSON serialization
         report_dict = {

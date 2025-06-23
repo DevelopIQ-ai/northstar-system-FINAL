@@ -44,3 +44,8 @@ ENV/
 .DS_Store
 Thumbs.db
 
+# Logs and Reports
+logs/
+*.log
+*-report-*.json
+
