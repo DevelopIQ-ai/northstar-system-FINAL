@@ -1,0 +1,62 @@
+[build]
+builder = "nixpacks"
+
+[deploy]
+startCommand = "uvicorn app:app --host 0.0.0.0 --port $PORT"
+healthcheckPath = "/health"
+healthcheckTimeout = 300
+restartPolicyType = "on_failure"
+
+[environments.production]
+variables = {}
+
+[environments.production.services.web]
+variables = {
+  # Python environment
+  PYTHONPATH = "/app",
+  PYTHONUNBUFFERED = "1",
+  
+  # Application settings  
+  HOST = "0.0.0.0",
+  PORT = "$PORT",
+  
+  # Logging
+  LOG_LEVEL = "INFO"
+}
+
+# Define required environment variables that need to be set in Railway dashboard
+[environments.production.services.web.environmentVariables]
+# Microsoft/Outlook OAuth
+MS_CLIENT_ID = { required = true, description = "Microsoft Azure App Registration Client ID" }
+MS_CLIENT_SECRET = { required = true, description = "Microsoft Azure App Registration Client Secret" }
+ENCRYPTED_REFRESH_TOKEN = { required = true, description = "Encrypted Microsoft OAuth refresh token" }
+ENCRYPTION_KEY = { required = true, description = "Encryption key for Microsoft tokens" }
+
+# Autodesk/BuildingConnected OAuth  
+AUTODESK_CLIENT_ID = { required = true, description = "Autodesk/BuildingConnected Client ID" }
+AUTODESK_CLIENT_SECRET = { required = true, description = "Autodesk/BuildingConnected Client Secret" }
+AUTODESK_ENCRYPTED_REFRESH_TOKEN = { required = true, description = "Encrypted Autodesk OAuth refresh token" }
+AUTODESK_ENCRYPTION_KEY = { required = true, description = "Encryption key for Autodesk tokens" }
+
+# Email settings
+DEFAULT_EMAIL_RECIPIENT = { required = true, description = "Default email address for bid reminders" }
+
+# Optional OAuth configuration overrides
+MICROSOFT_AUTH_URL = { required = false, description = "Microsoft OAuth authorization URL" }
+MICROSOFT_TOKEN_URL = { required = false, description = "Microsoft OAuth token URL" }
+AUTODESK_AUTH_URL = { required = false, description = "Autodesk OAuth authorization URL" }
+AUTODESK_TOKEN_URL = { required = false, description = "Autodesk OAuth token URL" }
+
+# Callback ports (for local OAuth setup only, not needed in production)
+MICROSOFT_CALLBACK_PORT = { required = false, description = "Local callback port for Microsoft OAuth" }
+AUTODESK_CALLBACK_PORT = { required = false, description = "Local callback port for Autodesk OAuth" }
+
+[services.web]
+buildCommand = "pip install -r requirements.txt"
+startCommand = "uvicorn app:app --host 0.0.0.0 --port $PORT --workers 1"
+
+[services.web.healthcheck]
+path = "/health"
+intervalSeconds = 30
+timeoutSeconds = 10
+retries = 3 
