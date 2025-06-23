@@ -100,11 +100,20 @@ class BidReminderAgent:
     
     @traceable(name="🔐 Initialize Authentication", tags=["auth", "setup"])
     async def initialize_auth_node(self, state: BidReminderState) -> BidReminderState:
-        """Initialize authentication for BuildingConnected only (email auth commented out)"""
+        """Initialize authentication for both Outlook and BuildingConnected"""
         logger.info("🔐 Starting authentication initialization node")
         try:
+            # Initialize Outlook authentication
+            logger.info("Creating Outlook token manager from environment")
+            outlook_token_manager = create_token_manager_from_env()
+            logger.info("✅ Outlook token manager created successfully")
+            
+            logger.info("Creating Outlook client with token manager")
+            outlook_client = MSGraphClient(outlook_token_manager)
+            logger.info("✅ Outlook client created successfully")
+            
+            # Initialize BuildingConnected authentication
             logger.info("Creating BuildingConnected token manager from environment")
-            # Initialize BuildingConnected only for now
             building_token_manager = create_buildingconnected_token_manager_from_env()
             logger.info("✅ BuildingConnected token manager created successfully")
             
@@ -113,7 +122,6 @@ class BidReminderAgent:
             logger.info("✅ BuildingConnected client created successfully")
             
             # Verify BuildingConnected auth by testing projects endpoint instead of user info
-            # This bypasses potential user info endpoint issues
             logger.info("Testing BuildingConnected authentication by fetching test projects")
             try:
                 test_projects = await building_client.get_all_projects(limit=1)
@@ -126,9 +134,9 @@ class BidReminderAgent:
             logger.info("✅ Authentication node completed successfully")
             return {
                 **state,
-                "outlook_token_manager": None,  # Commented out for now
+                "outlook_token_manager": outlook_token_manager,
                 "building_token_manager": building_token_manager,
-                "outlook_client": None,  # Commented out for now
+                "outlook_client": outlook_client,
                 "building_client": building_client,
                 "error_message": None
             }
@@ -279,79 +287,124 @@ class BidReminderAgent:
                 "workflow_successful": False
             }
     
-    # COMMENTED OUT FOR NOW - only want to see project data
-    # async def send_reminder_email_node(self, state: BidReminderState) -> BidReminderState:
-    #     """Send reminder email about upcoming projects"""
-    #     if state.get("error_message"):
-    #         return {
-    #             **state,
-    #             "reminder_email_sent": False,
-    #             "workflow_successful": False
-    #         }
-    #     
-    #     outlook_client = state["outlook_client"]
-    #     upcoming_projects = state.get("upcoming_projects", [])
-    #     
-    #     if not outlook_client:
-    #         return {
-    #             **state,
-    #             "error_message": "Outlook client not initialized",
-    #             "reminder_email_sent": False,
-    #             "workflow_successful": False
-    #         }
-    #     
-    #     try:
-    #         if not upcoming_projects:
-    #             # No projects due - send empty reminder
-    #             email_subject = "BuildingConnected Bid Reminder - No Upcoming Bids"
-    #             email_body = self._create_no_projects_email()
-    #         else:
-    #             # Projects found - send reminder
-    #             email_subject = f"BuildingConnected Bid Reminder - {len(upcoming_projects)} Projects Due Soon"
-    #             email_body = self._create_reminder_email(upcoming_projects)
-    #         
-    #         # Send email
-    #         send_response = await outlook_client.send_email(
-    #             to=self.default_recipient,
-    #             subject=email_subject,
-    #             body=email_body,
-    #             importance=EmailImportance.HIGH
-    #         )
-    #         
-    #         if send_response.success:
-    #             return {
-    #                 **state,
-    #                 "reminder_email_sent": True,
-    #                 "workflow_successful": True,
-    #                 "error_message": None
-    #             }
-    #         else:
-    #             return {
-    #                 **state,
-    #                 "reminder_email_sent": False,
-    #                 "workflow_successful": False,
-    #                 "error_message": f"Email sending failed: {send_response.error}"
-    #             }
-    #             
-    #     except Exception as e:
-    #         return {
-    #             **state,
-    #             "reminder_email_sent": False,
-    #             "workflow_successful": False,
-    #             "error_message": f"Email sending failed: {str(e)}"
-    #         }
+    @traceable(name="📧 Send Invitation Emails", tags=["email", "invitations"])
+    async def send_reminder_email_node(self, state: BidReminderState) -> BidReminderState:
+        """Send personalized emails to each bidding invitation"""
+        logger.info("📧 Starting email sending node")
+        
+        if state.get("error_message"):
+            logger.warning("Skipping email sending due to previous error")
+            return {
+                **state,
+                "reminder_email_sent": False,
+                "workflow_successful": False
+            }
+        
+        outlook_client = state["outlook_client"]
+        bidding_invitations = state.get("bidding_invitations", [])
+        upcoming_projects = state.get("upcoming_projects", [])
+        
+        if not outlook_client:
+            logger.error("❌ Outlook client not initialized")
+            return {
+                **state,
+                "error_message": "Outlook client not initialized",
+                "reminder_email_sent": False,
+                "workflow_successful": False
+            }
+        
+        try:
+            if not bidding_invitations:
+                logger.info("No bidding invitations found, no emails to send")
+                return {
+                    **state,
+                    "reminder_email_sent": False,
+                    "error_message": None
+                }
+            
+            # Create project lookup for invitation context
+            project_lookup = {project.id: project for project in upcoming_projects}
+            
+            logger.info(f"Sending personalized emails to {len(bidding_invitations)} invitations")
+            
+            emails_sent = 0
+            failed_emails = []
+            
+            for invitation in bidding_invitations:
+                try:
+                    logger.info(f"Sending email to {invitation.firstName} {invitation.lastName} ({invitation.email})")
+                    
+                    # Find the associated project
+                    project = project_lookup.get(invitation.projectId)
+                    
+                    # Create personalized email
+                    email_subject = f"Bid Invitation: {invitation.bidPackageName}"
+                    email_body = self._create_personalized_invitation_email(invitation, project)
+                    
+                    # Send email
+                    send_response = await outlook_client.send_email(
+                        to=invitation.email,
+                        subject=email_subject,
+                        body=email_body,
+                        importance=EmailImportance.HIGH
+                    )
+                    
+                    if send_response.success:
+                        emails_sent += 1
+                        logger.info(f"✅ Email sent successfully to {invitation.email}")
+                    else:
+                        failed_emails.append(f"{invitation.email}: {send_response.error}")
+                        logger.error(f"❌ Failed to send email to {invitation.email}: {send_response.error}")
+                        
+                except Exception as email_error:
+                    failed_emails.append(f"{invitation.email}: {str(email_error)}")
+                    logger.error(f"❌ Failed to send email to {invitation.email}: {str(email_error)}")
+            
+            # Determine overall success
+            if emails_sent > 0:
+                success_message = f"✅ Successfully sent {emails_sent} invitation emails"
+                if failed_emails:
+                    success_message += f", {len(failed_emails)} failed"
+                logger.info(success_message)
+                
+                return {
+                    **state,
+                    "reminder_email_sent": True,
+                    "workflow_successful": True,
+                    "error_message": None
+                }
+            else:
+                error_message = f"Failed to send any emails. Errors: {'; '.join(failed_emails[:3])}"
+                logger.error(error_message)
+                return {
+                    **state,
+                    "reminder_email_sent": False,
+                    "workflow_successful": False,
+                    "error_message": error_message
+                }
+                
+        except Exception as e:
+            logger.error(f"❌ Email sending process failed: {str(e)}")
+            return {
+                **state,
+                "reminder_email_sent": False,
+                "workflow_successful": False,
+                "error_message": f"Email sending failed: {str(e)}"
+            }
     
     @traceable(name="🏁 Finalize Results", tags=["finalize", "summary"])
     async def finalize_result_node(self, state: BidReminderState) -> BidReminderState:
-        """Finalize the workflow result - showing project data and bidding invitations"""
+        """Finalize the workflow result - showing project data, bidding invitations, and email status"""
         logger.info("🏁 Starting finalize result node")
         
         upcoming_projects = state.get("upcoming_projects", [])
         bidding_invitations = state.get("bidding_invitations", [])
+        reminder_email_sent = state.get("reminder_email_sent", False)
         error_message = state.get("error_message")
         
         logger.info(f"Projects found: {len(upcoming_projects) if upcoming_projects else 0}")
         logger.info(f"Bidding invitations found: {len(bidding_invitations) if bidding_invitations else 0}")
+        logger.info(f"Emails sent: {reminder_email_sent}")
         for invitation in bidding_invitations:
             logger.info(f"  - {invitation.firstName} {invitation.lastName} ({invitation.email}) - {invitation.bidPackageName}")
             logger.info(f"  - {invitation.linkToBid}\n\n")
@@ -364,84 +417,111 @@ class BidReminderAgent:
         else:
             project_count = len(upcoming_projects)
             invitation_count = len(bidding_invitations) if bidding_invitations else 0
+            email_status = "✅ Emails sent successfully" if reminder_email_sent else "⚠️ No emails sent (no invitations found)"
+            
             result_message = (
-                f"✅ Project check completed successfully!\n"
+                f"✅ Bid reminder workflow completed successfully!\n"
                 f"📋 Found {project_count} projects due in 5-10 days\n"
                 f"📧 Found {invitation_count} bidding invitations across all projects\n"
-                f"💌 Email sending is currently disabled - only showing project data"
+                f"💌 {email_status}"
             )
             workflow_successful = True
-            logger.info(f"✅ Workflow completed successfully with {project_count} projects and {invitation_count} invitations")
+            logger.info(f"✅ Workflow completed successfully with {project_count} projects, {invitation_count} invitations, emails sent: {reminder_email_sent}")
         
         logger.info("🏁 Finalize result node completed")
         
         return {
             **state,
             "result_message": result_message,
-            "workflow_successful": workflow_successful,
-            "reminder_email_sent": False  # Always false since email is disabled
+            "workflow_successful": workflow_successful
         }
     
-    # COMMENTED OUT - Email functions not needed for now
-    # def _create_reminder_email(self, projects: List[Project]) -> str:
-    #     """Create HTML email body for project reminders"""
-    #     html_parts = [
-    #         "<html><body>",
-    #         "<h2>🚨 BuildingConnected Bid Reminder</h2>",
-    #         f"<p>You have <strong>{len(projects)}</strong> projects with bids due in the next 5-10 days:</p>",
-    #         "<table border='1' cellpadding='10' cellspacing='0' style='border-collapse: collapse; width: 100%;'>",
-    #         "<tr style='background-color: #f0f0f0;'>",
-    #         "<th>Project Name</th>",
-    #         "<th>Bid Due Date</th>",
-    #         "<th>State</th>",
-    #         "<th>Sealed Bidding</th>",
-    #         "</tr>"
-    #     ]
-    #     
-    #     for project in projects:
-    #         # Format date for display
-    #         try:
-    #             if project.bidsDueAt:
-    #                 due_date = datetime.fromisoformat(project.bidsDueAt.replace('Z', '+00:00'))
-    #                 formatted_date = due_date.strftime('%Y-%m-%d %H:%M')
-    #             else:
-    #                 formatted_date = "Not specified"
-    #         except:
-    #             formatted_date = project.bidsDueAt or "Not specified"
-    #         
-    #         sealed_status = "Yes" if project.isBiddingSealed else "No"
-    #         
-    #         html_parts.extend([
-    #             "<tr>",
-    #             f"<td><strong>{project.name}</strong></td>",
-    #             f"<td>{formatted_date}</td>",
-    #             f"<td>{project.state or 'Unknown'}</td>",
-    #             f"<td>{sealed_status}</td>",
-    #             "</tr>"
-    #         ])
-    #     
-    #     html_parts.extend([
-    #         "</table>",
-    #         "<br>",
-    #         "<p><strong>⚠️ Action Required:</strong> Review these projects and ensure your bids are ready!</p>",
-    #         "<p><em>This reminder was automatically generated by Claude's Bid Reminder Agent.</em></p>",
-    #         f"<p><small>Generated on: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</small></p>",
-    #         "</body></html>"
-    #     ])
-    #     
-    #     return "".join(html_parts)
-    # 
-    # def _create_no_projects_email(self) -> str:
-    #     """Create email body when no projects are due"""
-    #     return """
-    #     <html><body>
-    #     <h2>✅ BuildingConnected Bid Reminder</h2>
-    #     <p>Good news! You have <strong>no projects</strong> with bids due in the next 5-10 days.</p>
-    #     <p>You can relax for now, but don't forget to check back later!</p>
-    #     <p><em>This reminder was automatically generated by Claude's Bid Reminder Agent.</em></p>
-    #     <p><small>Generated on: {}</small></p>
-    #     </body></html>
-    #     """.format(datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
+    def _create_personalized_invitation_email(self, invitation: BiddingInvitationData, project: Optional[Project]) -> str:
+        """Create personalized HTML email for bidding invitation with LinkToBid button"""
+        
+        # Format the due date if available
+        due_date_formatted = "Not specified"
+        if project and project.bidsDueAt:
+            try:
+                due_date = datetime.fromisoformat(project.bidsDueAt.replace('Z', '+00:00'))
+                due_date_formatted = due_date.strftime('%A, %B %d, %Y at %I:%M %p')
+            except:
+                due_date_formatted = project.bidsDueAt
+        
+        # Determine project name - use bid package name as fallback
+        project_name = project.name if project else invitation.bidPackageName
+        
+        # Create the HTML email template
+        html_template = f"""
+        <html>
+        <head>
+            <style>
+                body {{ font-family: Arial, sans-serif; line-height: 1.6; color: #333; }}
+                .container {{ max-width: 600px; margin: 0 auto; padding: 20px; }}
+                .header {{ background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 30px; text-align: center; border-radius: 10px 10px 0 0; }}
+                .content {{ background: #f9f9f9; padding: 30px; border-radius: 0 0 10px 10px; }}
+                .project-details {{ background: white; padding: 20px; border-radius: 8px; margin: 20px 0; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }}
+                .cta-button {{ display: inline-block; background: #28a745; color: white; padding: 15px 30px; text-decoration: none; border-radius: 5px; font-weight: bold; margin: 20px 0; text-align: center; }}
+                .cta-button:hover {{ background: #218838; }}
+                .footer {{ text-align: center; margin-top: 30px; color: #666; font-size: 12px; }}
+                .urgent {{ color: #dc3545; font-weight: bold; }}
+                .highlight {{ background: #fff3cd; padding: 10px; border-left: 4px solid #ffc107; margin: 15px 0; }}
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <div class="header">
+                    <h1>🏗️ Bid Invitation</h1>
+                    <p>You're invited to submit a bid</p>
+                </div>
+                
+                <div class="content">
+                    <h2>Hello {invitation.firstName} {invitation.lastName},</h2>
+                    
+                    <p>You have been invited to submit a bid for the following project:</p>
+                    
+                    <div class="project-details">
+                        <h3>📋 Project Details</h3>
+                        <p><strong>Project:</strong> {project_name}</p>
+                        <p><strong>Bid Package:</strong> {invitation.bidPackageName}</p>
+                        <p><strong>Bid Due Date:</strong> <span class="urgent">{due_date_formatted}</span></p>
+                        {f'<p><strong>Project State:</strong> {project.state}</p>' if project and project.state else ''}
+                        {f'<p><strong>Sealed Bidding:</strong> {"Yes" if project and project.isBiddingSealed else "No"}</p>' if project else ''}
+                    </div>
+                    
+                    <div class="highlight">
+                        <p><strong>⏰ Action Required:</strong> This bid is due soon! Please review the project details and submit your bid before the deadline.</p>
+                    </div>
+                    
+                    <div style="text-align: center;">
+                        <a href="{invitation.linkToBid}" class="cta-button">
+                            🔗 Access Bid Portal
+                        </a>
+                    </div>
+                    
+                    <p><strong>Next Steps:</strong></p>
+                    <ol>
+                        <li>Click the "Access Bid Portal" button above</li>
+                        <li>Review all project documents and specifications</li>
+                        <li>Prepare and submit your bid before the deadline</li>
+                        <li>Contact the project team if you have any questions</li>
+                    </ol>
+                    
+                    <p>If you have any questions about this invitation or need assistance accessing the bid portal, please contact the project team directly.</p>
+                    
+                    <p>Good luck with your submission!</p>
+                    
+                    <div class="footer">
+                        <p><em>This invitation was automatically sent by Claude's Bid Reminder Agent.</em></p>
+                        <p><small>Generated on: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</small></p>
+                    </div>
+                </div>
+            </div>
+        </body>
+        </html>
+        """
+        
+        return html_template
     
     def should_continue_after_auth(self, state: BidReminderState) -> str:
         """Continue to check projects or end on auth error"""
@@ -460,16 +540,24 @@ class BidReminderAgent:
         return "get_bidding_invitations"
     
     def should_continue_after_invitations(self, state: BidReminderState) -> str:
-        """Go to finalize after getting bidding invitations"""
-        logger.info("➡️  Bidding invitations checked, routing to finalize_result")
+        """Go to send emails after getting bidding invitations, or finalize on error"""
+        if state.get("error_message"):
+            logger.info("➡️  Bidding invitations check failed, routing to finalize_result")
+            return "finalize_result"
+        logger.info("➡️  Bidding invitations checked successfully, routing to send_reminder_email")
+        return "send_reminder_email"
+    
+    def should_continue_after_email(self, state: BidReminderState) -> str:
+        """Go to finalize after sending emails"""
+        logger.info("➡️  Email sending completed, routing to finalize_result")
         return "finalize_result"
     
     def build_graph(self) -> StateGraph:
-        """Build the workflow graph with bidding invitations (email nodes commented out)"""
+        """Build the workflow graph with complete email functionality"""
         logger.info("🏗️  Building LangGraph workflow")
         graph = StateGraph(BidReminderState)
         
-        # Add nodes (email node commented out)
+        # Add nodes
         logger.info("Adding workflow nodes:")
         graph.add_node("initialize_auth", self.initialize_auth_node)
         logger.info("  - initialize_auth")
@@ -477,11 +565,12 @@ class BidReminderAgent:
         logger.info("  - check_upcoming_projects")
         graph.add_node("get_bidding_invitations", self.get_bidding_invitations_node)
         logger.info("  - get_bidding_invitations")
-        # graph.add_node("send_reminder_email", self.send_reminder_email_node)  # COMMENTED OUT
+        graph.add_node("send_reminder_email", self.send_reminder_email_node)
+        logger.info("  - send_reminder_email")
         graph.add_node("finalize_result", self.finalize_result_node)
         logger.info("  - finalize_result")
         
-        # Add edges (flow with bidding invitations but without email)
+        # Add edges (complete flow with email sending)
         logger.info("Adding workflow edges:")
         graph.add_edge(START, "initialize_auth")
         logger.info("  - START → initialize_auth")
@@ -507,11 +596,19 @@ class BidReminderAgent:
             "get_bidding_invitations",
             self.should_continue_after_invitations,
             {
+                "send_reminder_email": "send_reminder_email",
                 "finalize_result": "finalize_result"
             }
         )
-        logger.info("  - get_bidding_invitations → finalize_result")
-        # graph.add_edge("send_reminder_email", "finalize_result")  # COMMENTED OUT
+        logger.info("  - get_bidding_invitations → send_reminder_email OR finalize_result")
+        graph.add_conditional_edges(
+            "send_reminder_email",
+            self.should_continue_after_email,
+            {
+                "finalize_result": "finalize_result"
+            }
+        )
+        logger.info("  - send_reminder_email → finalize_result")
         graph.add_edge("finalize_result", END)
         logger.info("  - finalize_result → END")
         
@@ -589,7 +686,7 @@ if __name__ == "__main__":
         
         print("🚀 Running Bid Reminder Agent...")
         print("This will check BuildingConnected for projects due in 5-10 days")
-        print("and send a reminder email.\n")
+        print("and send personalized invitation emails to each bidder.\n")
         
         result = await run_bid_reminder()
         
