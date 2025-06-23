@@ -12,6 +12,7 @@ from dotenv import load_dotenv
 from langgraph.graph import StateGraph, START, END
 from pydantic import BaseModel
 from typing_extensions import TypedDict
+from langsmith import traceable
 
 from auth.auth_helpers import (
     create_token_manager_from_env,
@@ -62,10 +63,41 @@ class BidReminderAgent:
     def __init__(self):
         self.default_recipient = os.getenv("DEFAULT_EMAIL_RECIPIENT", "kush@developiq.ai")
         self.days_before_bid = [5, 6, 7, 8, 9, 10]  # Check 5-10 days before bid due
+        self.run_start_time = datetime.now()
         logger.info("BidReminderAgent initialized")
         logger.info(f"Default email recipient: {self.default_recipient}")
         logger.info(f"Days before bid to check: {self.days_before_bid}")
     
+    def _create_run_name(self, project_count: Optional[int] = None, success: bool = True) -> str:
+        """Create descriptive run name for LangSmith"""
+        if not success:
+            return f"🚨 Bid Check Failed - {self.run_start_time.strftime('%H:%M:%S')}"
+        
+        if project_count is None:
+            return f"🔄 Bid Check Running - {self.run_start_time.strftime('%H:%M:%S')}"
+        
+        if project_count == 0:
+            return f"✅ No Upcoming Bids - {self.run_start_time.strftime('%H:%M:%S')}"
+        
+        return f"📋 {project_count} Project{'s' if project_count != 1 else ''} Due (5-10 days) - {self.run_start_time.strftime('%H:%M:%S')}"
+    
+    def _create_run_metadata(self, project_count: Optional[int] = None, success: bool = True) -> dict:
+        """Create rich metadata for LangSmith tracing"""
+        metadata = {
+            "agent_version": "1.0.0",
+            "environment": os.getenv("ENVIRONMENT", "development"),
+            "run_timestamp": self.run_start_time.isoformat(),
+            "recipient": self.default_recipient,
+            "check_days": self.days_before_bid,
+            "success": success
+        }
+        
+        if project_count is not None:
+            metadata["projects_found"] = project_count
+            
+        return metadata
+    
+    @traceable(name="🔐 Initialize Authentication", tags=["auth", "setup"])
     async def initialize_auth_node(self, state: BidReminderState) -> BidReminderState:
         """Initialize authentication for BuildingConnected only (email auth commented out)"""
         logger.info("🔐 Starting authentication initialization node")
@@ -112,6 +144,7 @@ class BidReminderAgent:
                 "workflow_successful": False
             }
     
+    @traceable(name="📋 Check Upcoming Projects", tags=["projects", "data-fetch"])
     async def check_upcoming_projects_node(self, state: BidReminderState) -> BidReminderState:
         """Check BuildingConnected for projects due in 5-10 days"""
         logger.info("📋 Starting project check node")
@@ -238,6 +271,7 @@ class BidReminderAgent:
     #             "error_message": f"Email sending failed: {str(e)}"
     #         }
     
+    @traceable(name="🏁 Finalize Results", tags=["finalize", "summary"])
     async def finalize_result_node(self, state: BidReminderState) -> BidReminderState:
         """Finalize the workflow result - only showing project data for now"""
         logger.info("🏁 Starting finalize result node")
@@ -408,9 +442,25 @@ class BidReminderAgent:
         }
         logger.info("✅ Initial state created")
         
-        # Execute workflow
+        # Execute workflow with enhanced tracing
         logger.info("🔄 Executing LangGraph workflow...")
-        result = await graph.ainvoke(initial_state)
+        config = {}
+        if os.getenv("LANGSMITH_TRACING") == "true" and os.getenv("LANGSMITH_API_KEY"):
+            # Create enhanced run configuration
+            run_name = self._create_run_name()
+            metadata = self._create_run_metadata()
+            
+            config = {
+                "configurable": {
+                    "thread_id": f"bid-reminder-{self.run_start_time.strftime('%Y%m%d-%H%M%S')}"
+                },
+                "tags": ["bid-reminder", "langgraph", "automation"],
+                "metadata": metadata,
+                "run_name": run_name
+            }
+            logger.info(f"🔍 Enhanced LangSmith tracing enabled: {run_name}")
+        
+        result = await graph.ainvoke(initial_state, config=config)
         logger.info("✅ Workflow execution completed")
         
         # Log final results
