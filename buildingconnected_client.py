@@ -176,6 +176,7 @@ class BuildingConnectedClient:
         Returns:
             List of Project objects
         """
+        logger.info(f"📋 Getting all projects (limit: {limit})")
         try:
             params = {
                 'limit': str(min(limit, 200))  # API max limit
@@ -185,6 +186,7 @@ class BuildingConnectedClient:
             
             projects = []
             if response.get('results') and isinstance(response['results'], list):
+                logger.info(f"📋 Processing {len(response['results'])} projects from API")
                 for project_data in response['results']:
                     project = Project(
                         id=project_data.get('id', ''),
@@ -196,7 +198,11 @@ class BuildingConnectedClient:
                         location=project_data.get('location')
                     )
                     projects.append(project)
+                    logger.debug(f"  - {project.name} (ID: {project.id})")
+            else:
+                logger.warning("⚠️  No projects found in API response")
             
+            logger.info(f"✅ Retrieved {len(projects)} projects")
             return projects
             
         except BuildingConnectedError:
@@ -214,7 +220,10 @@ class BuildingConnectedClient:
         Returns:
             ProjectsDueResponse with filtered projects and metadata
         """
+        logger.info(f"📅 Getting projects due in {days} days")
+        
         if not (0 <= days <= 365):
+            logger.error(f"❌ Invalid days value: {days} (must be 0-365)")
             raise ValueError("Days must be between 0 and 365")
         
         try:
@@ -224,14 +233,20 @@ class BuildingConnectedClient:
             
             target_date_end = target_date.replace(hour=23, minute=59, second=59, microsecond=999999)
             
+            logger.info(f"🎯 Target date range: {target_date.strftime('%Y-%m-%d')} to {target_date_end.strftime('%Y-%m-%d %H:%M:%S')}")
+            
             # Get all projects first
+            logger.info("📋 Fetching all projects to filter by date")
             all_projects = await self.get_all_projects()
+            logger.info(f"📋 Retrieved {len(all_projects)} total projects for filtering")
             
             # Filter projects that are due exactly on the target date
             projects_due_on_target_date = []
             
+            logger.info("🔍 Filtering projects by target date")
             for project in all_projects:
                 if not project.bidsDueAt:
+                    logger.debug(f"  - Skipping {project.name}: No bid due date")
                     continue
                 
                 try:
@@ -243,12 +258,16 @@ class BuildingConnectedClient:
                     # Check if bid due date falls within the target day
                     if target_date <= bid_due_date <= target_date_end:
                         projects_due_on_target_date.append(project)
+                        logger.info(f"  ✅ Match: {project.name} due {bid_due_date.strftime('%Y-%m-%d %H:%M')}")
+                    else:
+                        logger.debug(f"  - Skip: {project.name} due {bid_due_date.strftime('%Y-%m-%d %H:%M')} (outside range)")
                         
-                except (ValueError, AttributeError):
+                except (ValueError, AttributeError) as e:
                     # Skip projects with invalid date formats
+                    logger.warning(f"  ⚠️  Invalid date format for {project.name}: {project.bidsDueAt} - {e}")
                     continue
             
-            return ProjectsDueResponse(
+            response = ProjectsDueResponse(
                 projects=projects_due_on_target_date,
                 targetDate=target_date.strftime('%Y-%m-%d'),
                 daysFromNow=days,
@@ -256,9 +275,13 @@ class BuildingConnectedClient:
                 timestamp=datetime.now().isoformat()
             )
             
+            logger.info(f"✅ Found {len(projects_due_on_target_date)} projects due in {days} days")
+            return response
+            
         except BuildingConnectedError:
             raise
         except Exception as e:
+            logger.error(f"❌ Unexpected error filtering projects: {str(e)}")
             raise BuildingConnectedError(500, f"Unexpected error filtering projects: {str(e)}")
     
     async def get_project_details(self, project_id: str) -> Optional[Project]:
