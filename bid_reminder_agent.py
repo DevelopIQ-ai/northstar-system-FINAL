@@ -8,6 +8,9 @@ import logging
 from typing import Optional, List
 from datetime import datetime
 
+import sentry_sdk
+from sentry_sdk.integrations.logging import LoggingIntegration
+
 from dotenv import load_dotenv
 from langgraph.graph import StateGraph, START, END
 from pydantic import BaseModel
@@ -24,6 +27,20 @@ from clients.graph_api_client import MSGraphClient, EmailImportance
 from clients.buildingconnected_client import BuildingConnectedClient, Project, BiddingInvitationData
 
 load_dotenv()
+
+# Initialize Sentry for standalone agent
+sentry_dsn = os.getenv("SENTRY_DSN")
+if sentry_dsn:
+    sentry_sdk.init(
+        dsn=sentry_dsn,
+        integrations=[
+            LoggingIntegration(level=logging.INFO, event_level=logging.ERROR),
+        ],
+        traces_sample_rate=0.1,
+        environment=os.getenv("ENVIRONMENT", "development"),
+        release=os.getenv("RELEASE_VERSION", "1.0.0"),
+        send_default_pii=False,
+    )
 
 # Configure logging
 logging.basicConfig(
