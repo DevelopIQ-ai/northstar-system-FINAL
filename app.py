@@ -11,6 +11,11 @@ from typing import Optional
 from datetime import datetime
 from contextlib import asynccontextmanager
 
+import sentry_sdk
+from sentry_sdk.integrations.fastapi import FastApiIntegration
+from sentry_sdk.integrations.starlette import StarletteIntegration
+from sentry_sdk.integrations.logging import LoggingIntegration
+
 from fastapi import FastAPI, HTTPException, status, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -21,6 +26,22 @@ from bid_reminder_agent import run_bid_reminder
 
 # Load environment variables
 load_dotenv()
+
+# Initialize Sentry
+sentry_dsn = os.getenv("SENTRY_DSN")
+if sentry_dsn:
+    sentry_sdk.init(
+        dsn=sentry_dsn,
+        integrations=[
+            FastApiIntegration(),
+            StarletteIntegration(),
+            LoggingIntegration(level=logging.INFO, event_level=logging.ERROR),
+        ],
+        traces_sample_rate=0.1,  # Adjust based on your needs
+        environment=os.getenv("ENVIRONMENT", "development"),
+        release=os.getenv("RELEASE_VERSION", "1.0.0"),
+        send_default_pii=False,  # Don't send personally identifiable information
+    )
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -205,6 +226,7 @@ async def run_bid_reminder_workflow():
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to run bid reminder workflow: {str(e)}"
         )
+
 
 
 def setup_signal_handlers():

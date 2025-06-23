@@ -105,6 +105,10 @@ DEFAULT_EMAIL_RECIPIENT=your-email@domain.com
 LANGSMITH_TRACING=true  # Enable LangSmith workflow tracing
 LANGSMITH_API_KEY=your_langsmith_key
 ENVIRONMENT=development
+
+# Sentry Error Monitoring (Optional)
+SENTRY_DSN=your_sentry_dsn_url
+RELEASE_VERSION=1.0.0  # Optional: track releases in Sentry
 ```
 
 ## Authentication Setup Process
@@ -122,8 +126,8 @@ The setup process creates local callback servers on ports 3333 (Microsoft) and 5
 ## Data Flow Architecture
 
 ```
-FastAPI REST API ’ LangGraph Workflow ’ Dual API Clients
-     “                    “                    “
+FastAPI REST API ï¿½ LangGraph Workflow ï¿½ Dual API Clients
+     ï¿½                    ï¿½                    ï¿½
 - /run-bid-reminder    State Machine      OAuth Token Managers
 - Health checks        Error routing      - MSGraphClient  
 - Graceful shutdown    LangSmith tracing  - BuildingConnectedClient
