@@ -4,9 +4,12 @@ Direct API access without MCP protocol overhead
 """
 
 import logging
+import json
+import os
 from typing import Optional, Dict, Any, List
 from datetime import datetime, timedelta
 from enum import Enum
+import math
 
 import httpx
 from pydantic import BaseModel, Field
@@ -50,6 +53,65 @@ class UserInfo(BaseModel):
     name: Optional[str] = None
     company: Optional[str] = None
     authenticated: bool = False
+
+
+class BiddingInvitationData(BaseModel):
+    """Bidding invitation data model"""
+    id: str
+    state: str
+    projectId: str
+    bidPackageId: str
+    bidPackageName: str
+    bidsDueAt: str
+    daysUntilBidsDue: int
+    userId: str
+    firstName: str
+    lastName: str
+    title: str
+    email: str
+    linkToBid: str
+
+
+class BidPackage(BaseModel):
+    """Bid package model"""
+    id: str
+    name: str
+    projectId: str
+
+
+class Invitee(BaseModel):
+    """Invitee model"""
+    state: str
+    userId: str
+    firstName: Optional[str] = None
+    lastName: Optional[str] = None
+    title: Optional[str] = None
+    email: str
+
+
+class Invite(BaseModel):
+    """Invite model"""
+    id: str
+    projectId: str
+    bidPackageId: str
+    invitees: List[Invitee]
+
+
+class PaginationInfo(BaseModel):
+    """Pagination information"""
+    nextUrl: Optional[str] = None
+
+
+class BidPackageApiResponse(BaseModel):
+    """Bid package API response"""
+    results: List[BidPackage]
+    pagination: PaginationInfo
+
+
+class InviteApiResponse(BaseModel):
+    """Invite API response"""
+    results: List[Invite]
+    pagination: PaginationInfo
 
 
 class BuildingConnectedError(Exception):
@@ -339,3 +401,196 @@ class BuildingConnectedClient:
             raise
         except Exception as e:
             raise BuildingConnectedError(500, f"Unexpected error getting project invitations: {str(e)}")
+        
+    async def get_bidding_invitations(self, project_id: str) -> List[BiddingInvitationData]:
+        """
+        Get comprehensive bidding invitations for a specific project
+        
+        This method:
+        1. Gets project details to extract bid due date
+        2. Gets all bid packages for the project (with pagination)
+        3. For each bid package, gets all invites (with pagination)
+        4. Processes each invite to extract invitation data
+        
+        Args:
+            project_id: The project ID
+            
+        Returns:
+            List of BiddingInvitationData objects
+        """
+        logger.info(f"🎯 Generating bidding invitations for project {project_id}")
+        
+        if not project_id or not isinstance(project_id, str):
+            raise ValueError("project_id is required and must be a string")
+        
+        try:
+            # Step 1: Get project details to extract bid due date
+            logger.info(f"📋 Fetching project details for project {project_id}")
+            project_data = await self._make_request('GET', f'projects/{project_id}')
+            
+            # Extract bid due date and calculate days until due
+            bids_due_at = project_data.get('bidsDueAt', '')
+            days_until_bids_due = 0
+            
+            if bids_due_at:
+                try:
+                    bids_due_date = datetime.fromisoformat(bids_due_at.replace('Z', '+00:00')).replace(tzinfo=None)
+                    now = datetime.now()
+                    time_diff = bids_due_date - now
+                    days_until_bids_due = math.ceil(time_diff.total_seconds() / (24 * 3600))
+                except (ValueError, AttributeError) as e:
+                    logger.warning(f"⚠️  Invalid bid due date format: {bids_due_at} - {e}")
+            
+            logger.info(f"📅 Bids due at: {bids_due_at}, Days until due: {days_until_bids_due}")
+            
+            # Step 2: Get all bid packages for the project
+            logger.info("📦 Fetching bid packages for project")
+            all_bid_packages = []
+            next_bid_package_url = f"bid-packages?filter[projectId]={project_id}"
+            bid_package_page_count = 0
+            
+            while next_bid_package_url:
+                bid_package_page_count += 1
+                logger.info(f"📦 Fetching bid packages page {bid_package_page_count}")
+                
+                try:
+                    bid_package_data = await self._make_request('GET', next_bid_package_url)
+                    
+                    # Parse response using Pydantic model
+                    bid_package_response = BidPackageApiResponse(**bid_package_data)
+                    logger.info(f"✅ Successfully fetched page {bid_package_page_count} with {len(bid_package_response.results)} bid packages")
+                    
+                    all_bid_packages.extend(bid_package_response.results)
+                    
+                    # Handle pagination
+                    if bid_package_response.pagination.nextUrl:
+                        raw_next_url = bid_package_response.pagination.nextUrl
+                        if raw_next_url.startswith('/'):
+                            next_bid_package_url = raw_next_url[1:]  # Remove leading slash for our _make_request method
+                        elif raw_next_url.startswith('http'):
+                            # Extract path from full URL
+                            next_bid_package_url = raw_next_url.split('/construction/buildingconnected/v2/')[-1]
+                        else:
+                            next_bid_package_url = raw_next_url
+                    else:
+                        next_bid_package_url = None
+                    
+                    if bid_package_page_count > 50:
+                        logger.warning("⚠️  Reached maximum page limit (50) for bid packages")
+                        break
+                        
+                except BuildingConnectedError as e:
+                    logger.error(f"❌ Bid Package API error: {e.status_code} - {e.message}")
+                    break
+            
+            logger.info(f"📦 Total bid packages found: {len(all_bid_packages)}")
+            
+            # Step 3: For each bid package, get all invites and generate invitation data
+            all_invitation_data = []
+            
+            for bid_package in all_bid_packages:
+                bid_package_id = bid_package.id
+                bid_package_name = bid_package.name
+                
+                logger.info(f"🎪 Processing bid package: {bid_package_name} ({bid_package_id})")
+                
+                # Get all invites for this bid package
+                next_invite_url = f"invites?filter[projectId]={project_id}&filter[bidPackageId]={bid_package_id}"
+                invite_page_count = 0
+                
+                while next_invite_url:
+                    invite_page_count += 1
+                    logger.info(f"📧 Fetching invites page {invite_page_count} for bid package {bid_package_id}")
+                    
+                    try:
+                        invite_data = await self._make_request('GET', next_invite_url)
+                        
+                        # Save raw invite data to JSON file for debugging
+                        try:
+                            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                            filename = f"invite_data_{project_id}_{bid_package_id}_page{invite_page_count}_{timestamp}.json"
+                            filepath = os.path.join("logs", filename)
+                            
+                            # Create logs directory if it doesn't exist
+                            os.makedirs("logs", exist_ok=True)
+                            
+                            with open(filepath, 'w') as f:
+                                json.dump(invite_data, f, indent=2)
+                            
+                            logger.info(f"💾 Saved invite data to: {filepath}")
+                        except Exception as save_error:
+                            logger.warning(f"⚠️  Failed to save invite data to JSON: {save_error}")
+                        
+                        # Parse response using Pydantic model
+                        invite_response = InviteApiResponse(**invite_data)
+                        logger.info(f"✅ Successfully fetched page {invite_page_count} with {len(invite_response.results)} invites")
+                        
+                        # Process only the FIRST invite to avoid double-counting people
+                        if invite_response.results:
+                            invite = invite_response.results[0]  # Only process the first invite
+                            logger.debug(f"  Processing first invite {invite.id} (out of {len(invite_response.results)} total invites)")
+                            
+                            # Process ALL invitees in this first invite
+                            if invite.invitees and len(invite.invitees) > 0:
+                                logger.debug(f"  Processing {len(invite.invitees)} invitees for invite {invite.id}")
+                                
+                                for current_invitee in invite.invitees:
+                                    invitation_data = BiddingInvitationData(
+                                        id=invite.id,
+                                        state=current_invitee.state,
+                                        projectId=invite.projectId,
+                                        bidPackageId=invite.bidPackageId,
+                                        bidPackageName=bid_package_name,
+                                        bidsDueAt=bids_due_at,
+                                        daysUntilBidsDue=days_until_bids_due,
+                                        userId=current_invitee.userId,
+                                        firstName=current_invitee.firstName or '',
+                                        lastName=current_invitee.lastName or '',
+                                        title=current_invitee.title or '',
+                                        email=current_invitee.email,
+                                        linkToBid=f"https://app.buildingconnected.com/opportunities/{invite.id}/info"
+                                    )
+                                    
+                                    all_invitation_data.append(invitation_data)
+                                    logger.debug(f"    - Added: {current_invitee.firstName} {current_invitee.lastName} ({current_invitee.email})")
+                            else:
+                                logger.debug(f"  No invitees found for invite {invite.id}")
+                        else:
+                            logger.debug(f"  No invites found in this page")
+                        
+                        # Handle pagination
+                        if invite_response.pagination.nextUrl:
+                            raw_next_url = invite_response.pagination.nextUrl
+                            if raw_next_url.startswith('/'):
+                                next_invite_url = raw_next_url[1:]  # Remove leading slash for our _make_request method
+                            elif raw_next_url.startswith('http'):
+                                # Extract path from full URL
+                                next_invite_url = raw_next_url.split('/construction/buildingconnected/v2/')[-1]
+                            else:
+                                next_invite_url = raw_next_url
+                        else:
+                            next_invite_url = None
+                        
+                        if invite_page_count > 50:
+                            logger.warning("⚠️  Reached maximum page limit (50) for invites")
+                            break
+                            
+                    except BuildingConnectedError as e:
+                        logger.error(f"❌ Invite API error: {e.status_code} - {e.message}")
+                        break
+            
+            logger.info(f"🎯 Generated {len(all_invitation_data)} bidding invitation records")
+            
+            # Log the raw invitation data for debugging
+            logger.debug("=== BIDDING INVITATION DATA ===")
+            for invitation in all_invitation_data:
+                logger.debug(f"  - {invitation.firstName} {invitation.lastName} ({invitation.email}) - {invitation.bidPackageName}")
+            logger.debug("=== END BIDDING INVITATION DATA ===")
+            
+            return all_invitation_data
+            
+        except BuildingConnectedError:
+            raise
+        except Exception as e:
+            logger.error(f"❌ Unexpected error generating bidding invitations: {str(e)}")
+            raise BuildingConnectedError(500, f"Unexpected error generating bidding invitations: {str(e)}")

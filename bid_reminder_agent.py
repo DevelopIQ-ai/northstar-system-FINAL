@@ -20,7 +20,7 @@ from auth.auth_helpers import (
     BuildingConnectedTokenManager
 )
 from clients.graph_api_client import MSGraphClient, EmailImportance
-from clients.buildingconnected_client import BuildingConnectedClient, Project
+from clients.buildingconnected_client import BuildingConnectedClient, Project, BiddingInvitationData
 
 load_dotenv()
 
@@ -46,6 +46,7 @@ class BidReminderState(TypedDict):
     
     # Project data
     upcoming_projects: Optional[List[Project]]
+    bidding_invitations: Optional[List[BiddingInvitationData]]
     
     # Email data
     reminder_email_sent: bool
@@ -176,6 +177,75 @@ class BidReminderAgent:
                 "workflow_successful": False
             }
     
+    async def get_bidding_invitations_node(self, state: BidReminderState) -> BidReminderState:
+        """Get bidding invitations for each upcoming project"""
+        logger.info("📧 Starting bidding invitations check node")
+        
+        if state.get("error_message"):
+            logger.warning("Skipping bidding invitations check due to previous error")
+            return state
+        
+        building_client = state["building_client"]
+        upcoming_projects = state.get("upcoming_projects", [])
+        
+        if not building_client:
+            logger.error("❌ BuildingConnected client not initialized")
+            return {
+                **state,
+                "error_message": "BuildingConnected client not initialized",
+                "workflow_successful": False
+            }
+        
+        if not upcoming_projects:
+            logger.info("No upcoming projects found, skipping bidding invitations check")
+            return {
+                **state,
+                "bidding_invitations": [],
+                "error_message": None
+            }
+        
+        try:
+            all_bidding_invitations = []
+            
+            logger.info(f"Getting bidding invitations for {len(upcoming_projects)} projects")
+            
+            for project in upcoming_projects:
+                logger.info(f"🎯 Getting bidding invitations for project: {project.name} (ID: {project.id})")
+                
+                try:
+                    # Call the get_bidding_invitations method with the project ID
+                    project_invitations = await building_client.get_bidding_invitations(project.id)
+                    logger.info(f"✅ Found {len(project_invitations)} bidding invitations for project {project.name}")
+                    
+                    # Add project invitations to the overall list
+                    all_bidding_invitations.extend(project_invitations)
+                    
+                    # Log some details about the invitations
+                    for invitation in project_invitations:
+                        logger.debug(f"  - Invitation: {invitation.firstName} {invitation.lastName} ({invitation.email}) - {invitation.bidPackageName}")
+                    
+                except Exception as project_error:
+                    logger.error(f"❌ Failed to get invitations for project {project.name} (ID: {project.id}): {str(project_error)}")
+                    # Continue with other projects even if one fails
+                    continue
+            
+            logger.info(f"✅ Bidding invitations check completed: {len(all_bidding_invitations)} total invitations found")
+            
+            return {
+                **state,
+                "bidding_invitations": all_bidding_invitations,
+                "error_message": None
+            }
+            
+        except Exception as e:
+            logger.error(f"❌ Failed to get bidding invitations: {str(e)}")
+            return {
+                **state,
+                "bidding_invitations": None,
+                "error_message": f"Failed to get bidding invitations: {str(e)}",
+                "workflow_successful": False
+            }
+    
     # COMMENTED OUT FOR NOW - only want to see project data
     # async def send_reminder_email_node(self, state: BidReminderState) -> BidReminderState:
     #     """Send reminder email about upcoming projects"""
@@ -239,13 +309,18 @@ class BidReminderAgent:
     #         }
     
     async def finalize_result_node(self, state: BidReminderState) -> BidReminderState:
-        """Finalize the workflow result - only showing project data for now"""
+        """Finalize the workflow result - showing project data and bidding invitations"""
         logger.info("🏁 Starting finalize result node")
         
         upcoming_projects = state.get("upcoming_projects", [])
+        bidding_invitations = state.get("bidding_invitations", [])
         error_message = state.get("error_message")
         
         logger.info(f"Projects found: {len(upcoming_projects) if upcoming_projects else 0}")
+        logger.info(f"Bidding invitations found: {len(bidding_invitations) if bidding_invitations else 0}")
+        for invitation in bidding_invitations:
+            logger.info(f"  - {invitation.firstName} {invitation.lastName} ({invitation.email}) - {invitation.bidPackageName}")
+            logger.info(f"  - {invitation.linkToBid}\n\n")
         logger.info(f"Error message: {error_message if error_message else 'None'}")
         
         if error_message:
@@ -254,13 +329,15 @@ class BidReminderAgent:
             logger.error(f"Workflow failed with error: {error_message}")
         else:
             project_count = len(upcoming_projects)
+            invitation_count = len(bidding_invitations) if bidding_invitations else 0
             result_message = (
                 f"✅ Project check completed successfully!\n"
                 f"📋 Found {project_count} projects due in 5-10 days\n"
-                f"📧 Email sending is currently disabled - only showing project data"
+                f"📧 Found {invitation_count} bidding invitations across all projects\n"
+                f"💌 Email sending is currently disabled - only showing project data"
             )
             workflow_successful = True
-            logger.info(f"✅ Workflow completed successfully with {project_count} projects")
+            logger.info(f"✅ Workflow completed successfully with {project_count} projects and {invitation_count} invitations")
         
         logger.info("🏁 Finalize result node completed")
         
@@ -341,12 +418,20 @@ class BidReminderAgent:
         return "check_upcoming_projects"
     
     def should_continue_after_projects(self, state: BidReminderState) -> str:
-        """Go directly to finalize since email is disabled"""
-        logger.info("➡️  Projects checked, routing to finalize_result")
+        """Go to get bidding invitations if no error, otherwise finalize"""
+        if state.get("error_message"):
+            logger.info("➡️  Projects check failed, routing to finalize_result")
+            return "finalize_result"
+        logger.info("➡️  Projects checked successfully, routing to get_bidding_invitations")
+        return "get_bidding_invitations"
+    
+    def should_continue_after_invitations(self, state: BidReminderState) -> str:
+        """Go to finalize after getting bidding invitations"""
+        logger.info("➡️  Bidding invitations checked, routing to finalize_result")
         return "finalize_result"
     
     def build_graph(self) -> StateGraph:
-        """Build the simplified workflow graph (email nodes commented out)"""
+        """Build the workflow graph with bidding invitations (email nodes commented out)"""
         logger.info("🏗️  Building LangGraph workflow")
         graph = StateGraph(BidReminderState)
         
@@ -356,11 +441,13 @@ class BidReminderAgent:
         logger.info("  - initialize_auth")
         graph.add_node("check_upcoming_projects", self.check_upcoming_projects_node)
         logger.info("  - check_upcoming_projects")
+        graph.add_node("get_bidding_invitations", self.get_bidding_invitations_node)
+        logger.info("  - get_bidding_invitations")
         # graph.add_node("send_reminder_email", self.send_reminder_email_node)  # COMMENTED OUT
         graph.add_node("finalize_result", self.finalize_result_node)
         logger.info("  - finalize_result")
         
-        # Add edges (simplified flow without email)
+        # Add edges (flow with bidding invitations but without email)
         logger.info("Adding workflow edges:")
         graph.add_edge(START, "initialize_auth")
         logger.info("  - START → initialize_auth")
@@ -377,10 +464,19 @@ class BidReminderAgent:
             "check_upcoming_projects",
             self.should_continue_after_projects,
             {
-                "finalize_result": "finalize_result"  # Direct to finalize, no email
+                "get_bidding_invitations": "get_bidding_invitations",
+                "finalize_result": "finalize_result"
             }
         )
-        logger.info("  - check_upcoming_projects → finalize_result")
+        logger.info("  - check_upcoming_projects → get_bidding_invitations OR finalize_result")
+        graph.add_conditional_edges(
+            "get_bidding_invitations",
+            self.should_continue_after_invitations,
+            {
+                "finalize_result": "finalize_result"
+            }
+        )
+        logger.info("  - get_bidding_invitations → finalize_result")
         # graph.add_edge("send_reminder_email", "finalize_result")  # COMMENTED OUT
         graph.add_edge("finalize_result", END)
         logger.info("  - finalize_result → END")
@@ -401,6 +497,7 @@ class BidReminderAgent:
             "outlook_client": None,
             "building_client": None,
             "upcoming_projects": None,
+            "bidding_invitations": None,
             "reminder_email_sent": False,
             "error_message": None,
             "workflow_successful": False,
