@@ -1132,3 +1132,150 @@
 2025-06-23 11:45:16,317 - __main__ - INFO - ==================================================
 2025-06-23 11:45:16,317 - __main__ - INFO - 🏁 BID REMINDER AGENT COMPLETED
 2025-06-23 11:45:16,317 - __main__ - INFO - ==================================================
+2025-06-23 11:55:42,086 - __main__ - INFO - ==================================================
+2025-06-23 11:55:42,086 - __main__ - INFO - 🚀 STARTING BID REMINDER AGENT
+2025-06-23 11:55:42,086 - __main__ - INFO - ==================================================
+2025-06-23 11:55:42,086 - __main__ - INFO - 📞 Called run_bid_reminder() convenience function
+2025-06-23 11:55:42,086 - __main__ - INFO - BidReminderAgent initialized
+2025-06-23 11:55:42,086 - __main__ - INFO - Default email recipient: kush@developiq.ai
+2025-06-23 11:55:42,086 - __main__ - INFO - Days before bid to check: [5, 6, 7, 8, 9, 10]
+2025-06-23 11:55:42,086 - __main__ - INFO - 🚀 Starting bid reminder workflow execution
+2025-06-23 11:55:42,086 - __main__ - INFO - 🏗️  Building LangGraph workflow
+2025-06-23 11:55:42,086 - __main__ - INFO - Adding workflow nodes:
+2025-06-23 11:55:42,086 - __main__ - INFO -   - initialize_auth
+2025-06-23 11:55:42,086 - __main__ - INFO -   - check_upcoming_projects
+2025-06-23 11:55:42,086 - __main__ - INFO -   - finalize_result
+2025-06-23 11:55:42,086 - __main__ - INFO - Adding workflow edges:
+2025-06-23 11:55:42,086 - __main__ - INFO -   - START → initialize_auth
+2025-06-23 11:55:42,086 - __main__ - INFO -   - initialize_auth → check_upcoming_projects OR finalize_result
+2025-06-23 11:55:42,086 - __main__ - INFO -   - check_upcoming_projects → finalize_result
+2025-06-23 11:55:42,086 - __main__ - INFO -   - finalize_result → END
+2025-06-23 11:55:42,086 - __main__ - INFO - ✅ Workflow graph compiled successfully
+2025-06-23 11:55:42,087 - __main__ - INFO - Initializing workflow state
+2025-06-23 11:55:42,087 - __main__ - INFO - ✅ Initial state created
+2025-06-23 11:55:42,087 - __main__ - INFO - 🔄 Executing LangGraph workflow...
+2025-06-23 11:55:42,087 - __main__ - INFO - 🔍 Enhanced LangSmith tracing enabled: 🔄 Bid Check Running - 11:55:42
+2025-06-23 11:55:42,115 - __main__ - INFO - 🔐 Starting authentication initialization node
+2025-06-23 11:55:42,115 - __main__ - INFO - Creating BuildingConnected token manager from environment
+2025-06-23 11:55:42,115 - __main__ - INFO - ✅ BuildingConnected token manager created successfully
+2025-06-23 11:55:42,115 - __main__ - INFO - Creating BuildingConnected client with token manager
+2025-06-23 11:55:42,115 - clients.buildingconnected_client - INFO - BuildingConnectedClient initialized with base URL: https://developer.api.autodesk.com/construction/buildingconnected/v2
+2025-06-23 11:55:42,115 - __main__ - INFO - ✅ BuildingConnected client created successfully
+2025-06-23 11:55:42,115 - __main__ - INFO - Testing BuildingConnected authentication by fetching test projects
+2025-06-23 11:55:42,115 - clients.buildingconnected_client - INFO - 📋 Getting all projects (limit: 1)
+2025-06-23 11:55:42,403 - httpx - INFO - HTTP Request: POST https://developer.api.autodesk.com/authentication/v2/token "HTTP/1.1 200 OK"
+2025-06-23 11:55:42,418 - clients.buildingconnected_client - INFO - 🔗 API Request: GET https://developer.api.autodesk.com/construction/buildingconnected/v2/projects
+2025-06-23 11:55:44,423 - httpx - INFO - HTTP Request: GET https://developer.api.autodesk.com/construction/buildingconnected/v2/projects?limit=1 "HTTP/1.1 200 OK"
+2025-06-23 11:55:44,425 - clients.buildingconnected_client - INFO - 📡 Response: 200 OK
+2025-06-23 11:55:44,426 - clients.buildingconnected_client - INFO - 📋 Processing 1 projects from API
+2025-06-23 11:55:44,426 - clients.buildingconnected_client - INFO - ✅ Retrieved 1 projects
+2025-06-23 11:55:44,426 - __main__ - INFO - ✅ BuildingConnected authentication verified - retrieved 1 test projects
+2025-06-23 11:55:44,426 - __main__ - INFO - ✅ Authentication node completed successfully
+2025-06-23 11:55:44,432 - __main__ - INFO - ➡️  Auth successful, routing to check_upcoming_projects
+2025-06-23 11:55:44,437 - __main__ - INFO - 📋 Starting project check node
+2025-06-23 11:55:44,437 - __main__ - INFO - Checking projects due in [5, 6, 7, 8, 9, 10] days
+2025-06-23 11:55:44,438 - __main__ - INFO - Fetching projects due in 5 days
+2025-06-23 11:55:44,438 - clients.buildingconnected_client - INFO - 📅 Getting projects due in 5 days
+2025-06-23 11:55:44,438 - clients.buildingconnected_client - INFO - 🎯 Target date range: 2025-06-28 to 2025-06-28 23:59:59
+2025-06-23 11:55:44,438 - clients.buildingconnected_client - INFO - 📋 Fetching all projects to filter by date
+2025-06-23 11:55:44,438 - clients.buildingconnected_client - INFO - 📋 Getting all projects (limit: 100)
+2025-06-23 11:55:44,438 - clients.buildingconnected_client - INFO - 🔗 API Request: GET https://developer.api.autodesk.com/construction/buildingconnected/v2/projects
+2025-06-23 11:55:46,774 - httpx - INFO - HTTP Request: GET https://developer.api.autodesk.com/construction/buildingconnected/v2/projects?limit=100 "HTTP/1.1 200 OK"
+2025-06-23 11:55:46,790 - clients.buildingconnected_client - INFO - 📡 Response: 200 OK
+2025-06-23 11:55:46,791 - clients.buildingconnected_client - INFO - 📋 Processing 82 projects from API
+2025-06-23 11:55:46,792 - clients.buildingconnected_client - INFO - ✅ Retrieved 82 projects
+2025-06-23 11:55:46,792 - clients.buildingconnected_client - INFO - 📋 Retrieved 82 total projects for filtering
+2025-06-23 11:55:46,792 - clients.buildingconnected_client - INFO - 🔍 Filtering projects by target date
+2025-06-23 11:55:46,792 - clients.buildingconnected_client - INFO - ✅ Found 0 projects due in 5 days
+2025-06-23 11:55:46,792 - __main__ - INFO - Found 0 projects due in 5 days
+2025-06-23 11:55:46,792 - __main__ - INFO - Fetching projects due in 6 days
+2025-06-23 11:55:46,792 - clients.buildingconnected_client - INFO - 📅 Getting projects due in 6 days
+2025-06-23 11:55:46,792 - clients.buildingconnected_client - INFO - 🎯 Target date range: 2025-06-29 to 2025-06-29 23:59:59
+2025-06-23 11:55:46,792 - clients.buildingconnected_client - INFO - 📋 Fetching all projects to filter by date
+2025-06-23 11:55:46,792 - clients.buildingconnected_client - INFO - 📋 Getting all projects (limit: 100)
+2025-06-23 11:55:46,792 - clients.buildingconnected_client - INFO - 🔗 API Request: GET https://developer.api.autodesk.com/construction/buildingconnected/v2/projects
+2025-06-23 11:55:47,474 - httpx - INFO - HTTP Request: GET https://developer.api.autodesk.com/construction/buildingconnected/v2/projects?limit=100 "HTTP/1.1 200 OK"
+2025-06-23 11:55:47,541 - clients.buildingconnected_client - INFO - 📡 Response: 200 OK
+2025-06-23 11:55:47,546 - clients.buildingconnected_client - INFO - 📋 Processing 82 projects from API
+2025-06-23 11:55:47,547 - clients.buildingconnected_client - INFO - ✅ Retrieved 82 projects
+2025-06-23 11:55:47,548 - clients.buildingconnected_client - INFO - 📋 Retrieved 82 total projects for filtering
+2025-06-23 11:55:47,548 - clients.buildingconnected_client - INFO - 🔍 Filtering projects by target date
+2025-06-23 11:55:47,549 - clients.buildingconnected_client - INFO - ✅ Found 0 projects due in 6 days
+2025-06-23 11:55:47,549 - __main__ - INFO - Found 0 projects due in 6 days
+2025-06-23 11:55:47,549 - __main__ - INFO - Fetching projects due in 7 days
+2025-06-23 11:55:47,549 - clients.buildingconnected_client - INFO - 📅 Getting projects due in 7 days
+2025-06-23 11:55:47,550 - clients.buildingconnected_client - INFO - 🎯 Target date range: 2025-06-30 to 2025-06-30 23:59:59
+2025-06-23 11:55:47,550 - clients.buildingconnected_client - INFO - 📋 Fetching all projects to filter by date
+2025-06-23 11:55:47,550 - clients.buildingconnected_client - INFO - 📋 Getting all projects (limit: 100)
+2025-06-23 11:55:47,550 - clients.buildingconnected_client - INFO - 🔗 API Request: GET https://developer.api.autodesk.com/construction/buildingconnected/v2/projects
+2025-06-23 11:55:49,561 - httpx - INFO - HTTP Request: GET https://developer.api.autodesk.com/construction/buildingconnected/v2/projects?limit=100 "HTTP/1.1 200 OK"
+2025-06-23 11:55:49,629 - clients.buildingconnected_client - INFO - 📡 Response: 200 OK
+2025-06-23 11:55:49,633 - clients.buildingconnected_client - INFO - 📋 Processing 82 projects from API
+2025-06-23 11:55:49,634 - clients.buildingconnected_client - INFO - ✅ Retrieved 82 projects
+2025-06-23 11:55:49,635 - clients.buildingconnected_client - INFO - 📋 Retrieved 82 total projects for filtering
+2025-06-23 11:55:49,635 - clients.buildingconnected_client - INFO - 🔍 Filtering projects by target date
+2025-06-23 11:55:49,635 - clients.buildingconnected_client - INFO -   ✅ Match: DevelopIQ due 2025-06-30 17:00
+2025-06-23 11:55:49,636 - clients.buildingconnected_client - INFO - ✅ Found 1 projects due in 7 days
+2025-06-23 11:55:49,636 - __main__ - INFO - Found 1 projects due in 7 days
+2025-06-23 11:55:49,636 - __main__ - INFO - Fetching projects due in 8 days
+2025-06-23 11:55:49,636 - clients.buildingconnected_client - INFO - 📅 Getting projects due in 8 days
+2025-06-23 11:55:49,637 - clients.buildingconnected_client - INFO - 🎯 Target date range: 2025-07-01 to 2025-07-01 23:59:59
+2025-06-23 11:55:49,637 - clients.buildingconnected_client - INFO - 📋 Fetching all projects to filter by date
+2025-06-23 11:55:49,637 - clients.buildingconnected_client - INFO - 📋 Getting all projects (limit: 100)
+2025-06-23 11:55:49,637 - clients.buildingconnected_client - INFO - 🔗 API Request: GET https://developer.api.autodesk.com/construction/buildingconnected/v2/projects
+2025-06-23 11:55:50,495 - httpx - INFO - HTTP Request: GET https://developer.api.autodesk.com/construction/buildingconnected/v2/projects?limit=100 "HTTP/1.1 200 OK"
+2025-06-23 11:55:50,568 - clients.buildingconnected_client - INFO - 📡 Response: 200 OK
+2025-06-23 11:55:50,573 - clients.buildingconnected_client - INFO - 📋 Processing 82 projects from API
+2025-06-23 11:55:50,584 - clients.buildingconnected_client - INFO - ✅ Retrieved 82 projects
+2025-06-23 11:55:50,584 - clients.buildingconnected_client - INFO - 📋 Retrieved 82 total projects for filtering
+2025-06-23 11:55:50,584 - clients.buildingconnected_client - INFO - 🔍 Filtering projects by target date
+2025-06-23 11:55:50,585 - clients.buildingconnected_client - INFO - ✅ Found 0 projects due in 8 days
+2025-06-23 11:55:50,585 - __main__ - INFO - Found 0 projects due in 8 days
+2025-06-23 11:55:50,585 - __main__ - INFO - Fetching projects due in 9 days
+2025-06-23 11:55:50,585 - clients.buildingconnected_client - INFO - 📅 Getting projects due in 9 days
+2025-06-23 11:55:50,585 - clients.buildingconnected_client - INFO - 🎯 Target date range: 2025-07-02 to 2025-07-02 23:59:59
+2025-06-23 11:55:50,585 - clients.buildingconnected_client - INFO - 📋 Fetching all projects to filter by date
+2025-06-23 11:55:50,585 - clients.buildingconnected_client - INFO - 📋 Getting all projects (limit: 100)
+2025-06-23 11:55:50,585 - clients.buildingconnected_client - INFO - 🔗 API Request: GET https://developer.api.autodesk.com/construction/buildingconnected/v2/projects
+2025-06-23 11:55:51,390 - httpx - INFO - HTTP Request: GET https://developer.api.autodesk.com/construction/buildingconnected/v2/projects?limit=100 "HTTP/1.1 200 OK"
+2025-06-23 11:55:51,455 - clients.buildingconnected_client - INFO - 📡 Response: 200 OK
+2025-06-23 11:55:51,458 - clients.buildingconnected_client - INFO - 📋 Processing 82 projects from API
+2025-06-23 11:55:51,459 - clients.buildingconnected_client - INFO - ✅ Retrieved 82 projects
+2025-06-23 11:55:51,459 - clients.buildingconnected_client - INFO - 📋 Retrieved 82 total projects for filtering
+2025-06-23 11:55:51,459 - clients.buildingconnected_client - INFO - 🔍 Filtering projects by target date
+2025-06-23 11:55:51,460 - clients.buildingconnected_client - INFO - ✅ Found 0 projects due in 9 days
+2025-06-23 11:55:51,460 - __main__ - INFO - Found 0 projects due in 9 days
+2025-06-23 11:55:51,461 - __main__ - INFO - Fetching projects due in 10 days
+2025-06-23 11:55:51,461 - clients.buildingconnected_client - INFO - 📅 Getting projects due in 10 days
+2025-06-23 11:55:51,461 - clients.buildingconnected_client - INFO - 🎯 Target date range: 2025-07-03 to 2025-07-03 23:59:59
+2025-06-23 11:55:51,461 - clients.buildingconnected_client - INFO - 📋 Fetching all projects to filter by date
+2025-06-23 11:55:51,461 - clients.buildingconnected_client - INFO - 📋 Getting all projects (limit: 100)
+2025-06-23 11:55:51,461 - clients.buildingconnected_client - INFO - 🔗 API Request: GET https://developer.api.autodesk.com/construction/buildingconnected/v2/projects
+2025-06-23 11:55:52,306 - httpx - INFO - HTTP Request: GET https://developer.api.autodesk.com/construction/buildingconnected/v2/projects?limit=100 "HTTP/1.1 200 OK"
+2025-06-23 11:55:52,316 - clients.buildingconnected_client - INFO - 📡 Response: 200 OK
+2025-06-23 11:55:52,320 - clients.buildingconnected_client - INFO - 📋 Processing 82 projects from API
+2025-06-23 11:55:52,321 - clients.buildingconnected_client - INFO - ✅ Retrieved 82 projects
+2025-06-23 11:55:52,321 - clients.buildingconnected_client - INFO - 📋 Retrieved 82 total projects for filtering
+2025-06-23 11:55:52,321 - clients.buildingconnected_client - INFO - 🔍 Filtering projects by target date
+2025-06-23 11:55:52,322 - clients.buildingconnected_client - INFO - ✅ Found 0 projects due in 10 days
+2025-06-23 11:55:52,322 - __main__ - INFO - Found 0 projects due in 10 days
+2025-06-23 11:55:52,322 - __main__ - INFO - Total projects found across all days: 1
+2025-06-23 11:55:52,322 - __main__ - INFO - Removing duplicate projects
+2025-06-23 11:55:52,322 - __main__ - INFO - ✅ Project check completed: 1 unique projects found
+2025-06-23 11:55:52,322 - __main__ - INFO -   - DevelopIQ | Due: 2025-06-30T17:00:00.000Z | State: PUBLISHED
+2025-06-23 11:55:52,328 - __main__ - INFO - ➡️  Projects checked, routing to finalize_result
+2025-06-23 11:55:52,331 - __main__ - INFO - 🏁 Starting finalize result node
+2025-06-23 11:55:52,331 - __main__ - INFO - Projects found: 1
+2025-06-23 11:55:52,331 - __main__ - INFO - Error message: None
+2025-06-23 11:55:52,332 - __main__ - INFO - ✅ Workflow completed successfully with 1 projects
+2025-06-23 11:55:52,332 - __main__ - INFO - 🏁 Finalize result node completed
+2025-06-23 11:55:52,334 - __main__ - INFO - ✅ Workflow execution completed
+2025-06-23 11:55:52,335 - __main__ - INFO - 📊 Workflow Results:
+2025-06-23 11:55:52,335 - __main__ - INFO -   - Successful: True
+2025-06-23 11:55:52,335 - __main__ - INFO -   - Projects found: 1
+2025-06-23 11:55:52,335 - __main__ - INFO -   - Email sent: False
+2025-06-23 11:55:52,335 - __main__ - INFO - ==================================================
+2025-06-23 11:55:52,335 - __main__ - INFO - 📋 FINAL RESULTS
+2025-06-23 11:55:52,335 - __main__ - INFO - ==================================================
+2025-06-23 11:55:52,335 - __main__ - INFO - 🏁 BID REMINDER AGENT COMPLETED
+2025-06-23 11:55:52,335 - __main__ - INFO - ==================================================
