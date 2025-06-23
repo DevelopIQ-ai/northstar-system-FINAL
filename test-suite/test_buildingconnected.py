@@ -1,17 +1,18 @@
 """
-Comprehensive BuildingConnected Workflow Test Suite
-Tests all potential failure scenarios that could cause the agent to fail
+Comprehensive BuildingConnected API Client Test Suite
+Tests all potential failure scenarios specific to BuildingConnected API integration
 
 This test suite covers:
-- Authentication failures (token issues, network errors)
 - API response handling (malformed data, rate limiting, network timeouts)
 - Data validation (invalid project IDs, malformed dates, missing fields)
 - Pagination issues (missing URLs, infinite loops, empty results)  
 - Workflow state management (node failures, error propagation)
 - Email integration (Outlook failures, sending errors)
 - Edge cases and boundary conditions
+- Network resilience and performance
 
-Run this before production deployments to catch failure scenarios
+Note: Authentication testing is handled separately by auth test suites
+Run this before production deployments to catch API integration failure scenarios
 """
 
 import asyncio
@@ -111,9 +112,6 @@ class BuildingConnectedTestSuite:
         logger.info(f"📁 Created temporary directory: {self.temp_dir}")
         
         try:
-            # Authentication Tests
-            await self._test_authentication_scenarios()
-            
             # API Client Tests
             await self._test_api_client_functionality()
             
@@ -144,185 +142,26 @@ class BuildingConnectedTestSuite:
         return self._generate_report()
     
     # =============================================================================
-    # Authentication Scenario Tests
-    # =============================================================================
-    
-    async def _test_authentication_scenarios(self):
-        """Test 1: Authentication failure scenarios"""
-        logger.info("🔐 Test Category 1: Authentication Scenarios")
-        
-        # Test 1.1: Invalid refresh token
-        await self._test_invalid_refresh_token()
-        
-        # Test 1.2: Expired access token
-        await self._test_expired_access_token()
-        
-        # Test 1.3: Token manager creation failure
-        await self._test_token_manager_creation_failure()
-        
-        # Test 1.4: Network failure during token refresh
-        await self._test_network_failure_during_refresh()
-        
-        # Test 1.5: Malformed token response
-        await self._test_malformed_token_response()
-    
-    async def _test_invalid_refresh_token(self):
-        """Test invalid refresh token handling"""
-        start_time = datetime.now()
-        test_name = "invalid_refresh_token"
-        
-        try:
-            # Mock token manager with invalid refresh token
-            mock_token_manager = Mock(spec=BuildingConnectedTokenManager)
-            mock_token_manager.get_access_token.side_effect = Exception("Token refresh failed: invalid_grant")
-            
-            client = BuildingConnectedClient(mock_token_manager)
-            
-            # This should fail gracefully
-            try:
-                await client.get_all_projects(limit=1)
-                self._record_test_result(test_name, False, "Should have failed with invalid token", start_time, severity="critical")
-            except Exception as e:
-                if "Token refresh failed" in str(e) or "invalid_grant" in str(e):
-                    self._record_test_result(test_name, True, "✅ Correctly handled invalid refresh token", start_time)
-                else:
-                    self._record_test_result(test_name, False, f"Unexpected error: {str(e)}", start_time, severity="high")
-                    
-        except Exception as e:
-            self._record_test_result(test_name, False, f"Test setup failed: {str(e)}", start_time, severity="medium")
-    
-    async def _test_expired_access_token(self):
-        """Test expired access token refresh"""
-        start_time = datetime.now()
-        test_name = "expired_access_token_refresh"
-        
-        try:
-            # Mock token manager that refreshes token on first call
-            mock_token_manager = Mock(spec=BuildingConnectedTokenManager)
-            call_count = 0
-            
-            async def mock_get_token():
-                nonlocal call_count
-                call_count += 1
-                if call_count == 1:
-                    raise Exception("Token expired")
-                return "new_valid_token_123"
-            
-            mock_token_manager.get_access_token = mock_get_token
-            
-            client = BuildingConnectedClient(mock_token_manager)
-            
-            # Mock the HTTP response for successful retry
-            with patch('httpx.AsyncClient') as mock_client:
-                mock_response = Mock()
-                mock_response.status_code = 200
-                mock_response.is_success = True
-                mock_response.text = '{"results": []}'
-                mock_response.json.return_value = {"results": []}
-                
-                mock_client.return_value.__aenter__.return_value.get.return_value = mock_response
-                
-                try:
-                    projects = await client.get_all_projects(limit=1)
-                    self._record_test_result(test_name, True, "✅ Successfully handled token refresh", start_time)
-                except Exception as e:
-                    if "Token expired" in str(e):
-                        self._record_test_result(test_name, False, "Failed to handle token refresh", start_time, severity="high")
-                    else:
-                        self._record_test_result(test_name, False, f"Unexpected error: {str(e)}", start_time, severity="medium")
-                        
-        except Exception as e:
-            self._record_test_result(test_name, False, f"Test setup failed: {str(e)}", start_time, severity="medium")
-    
-    async def _test_token_manager_creation_failure(self):
-        """Test token manager creation failures"""
-        start_time = datetime.now()
-        test_name = "token_manager_creation_failure"
-        
-        try:
-            # Test with missing environment variables
-            with patch.dict(os.environ, {}, clear=True):
-                try:
-                    token_manager = create_buildingconnected_token_manager_from_env()
-                    self._record_test_result(test_name, False, "Should have failed with missing env vars", start_time, severity="critical")
-                except Exception as e:
-                    if "environment variable" in str(e).lower() or "not found" in str(e).lower():
-                        self._record_test_result(test_name, True, "✅ Correctly handled missing environment variables", start_time)
-                    else:
-                        self._record_test_result(test_name, False, f"Unexpected error: {str(e)}", start_time, severity="medium")
-                        
-        except Exception as e:
-            self._record_test_result(test_name, False, f"Test setup failed: {str(e)}", start_time, severity="medium")
-    
-    async def _test_network_failure_during_refresh(self):
-        """Test network failure during token refresh"""
-        start_time = datetime.now()
-        test_name = "network_failure_during_refresh"
-        
-        try:
-            # Mock token manager that fails with network error
-            mock_token_manager = Mock(spec=BuildingConnectedTokenManager)
-            mock_token_manager.get_access_token.side_effect = httpx.NetworkError("Connection failed")
-            
-            client = BuildingConnectedClient(mock_token_manager)
-            
-            try:
-                await client.get_all_projects(limit=1)
-                self._record_test_result(test_name, False, "Should have failed with network error", start_time, severity="high")
-            except (httpx.NetworkError, Exception) as e:
-                if "Connection failed" in str(e) or "Network" in str(e):
-                    self._record_test_result(test_name, True, "✅ Correctly handled network failure", start_time)
-                else:
-                    self._record_test_result(test_name, False, f"Unexpected error: {str(e)}", start_time, severity="medium")
-                    
-        except Exception as e:
-            self._record_test_result(test_name, False, f"Test setup failed: {str(e)}", start_time, severity="medium")
-    
-    async def _test_malformed_token_response(self):
-        """Test malformed token response handling"""
-        start_time = datetime.now()
-        test_name = "malformed_token_response"
-        
-        try:
-            # Mock token manager that returns malformed response
-            mock_token_manager = Mock(spec=BuildingConnectedTokenManager)
-            mock_token_manager.get_access_token.side_effect = json.JSONDecodeError("Invalid JSON", "doc", 0)
-            
-            client = BuildingConnectedClient(mock_token_manager)
-            
-            try:
-                await client.get_all_projects(limit=1)
-                self._record_test_result(test_name, False, "Should have failed with JSON error", start_time, severity="high")
-            except (json.JSONDecodeError, Exception) as e:
-                if "JSON" in str(e) or "Invalid" in str(e):
-                    self._record_test_result(test_name, True, "✅ Correctly handled malformed response", start_time)
-                else:
-                    self._record_test_result(test_name, False, f"Unexpected error: {str(e)}", start_time, severity="medium")
-                    
-        except Exception as e:
-            self._record_test_result(test_name, False, f"Test setup failed: {str(e)}", start_time, severity="medium")
-    
-    # =============================================================================
     # API Client Functionality Tests
     # =============================================================================
     
     async def _test_api_client_functionality(self):
-        """Test 2: API client functionality scenarios"""
-        logger.info("🌐 Test Category 2: API Client Functionality")
+        """Test 1: API client functionality scenarios"""
+        logger.info("🌐 Test Category 1: API Client Functionality")
         
-        # Test 2.1: HTTP status code handling
+        # Test 1.1: HTTP status code handling
         await self._test_http_status_codes()
         
-        # Test 2.2: Empty response handling
+        # Test 1.2: Empty response handling
         await self._test_empty_responses()
         
-        # Test 2.3: Large response handling
+        # Test 1.3: Large response handling
         await self._test_large_responses()
         
-        # Test 2.4: Rate limiting responses
+        # Test 1.4: Rate limiting responses
         await self._test_rate_limiting()
         
-        # Test 2.5: Timeout handling
+        # Test 1.5: Timeout handling
         await self._test_timeout_handling()
     
     async def _test_http_status_codes(self):
@@ -509,22 +348,22 @@ class BuildingConnectedTestSuite:
     # =============================================================================
     
     async def _test_data_validation(self):
-        """Test 3: Data validation scenarios"""
-        logger.info("📊 Test Category 3: Data Validation")
+        """Test 2: Data validation scenarios"""
+        logger.info("📊 Test Category 2: Data Validation")
         
-        # Test 3.1: Invalid project IDs
+        # Test 2.1: Invalid project IDs
         await self._test_invalid_project_ids()
         
-        # Test 3.2: Malformed date formats
+        # Test 2.2: Malformed date formats
         await self._test_malformed_dates()
         
-        # Test 3.3: Missing required fields
+        # Test 2.3: Missing required fields
         await self._test_missing_fields()
         
-        # Test 3.4: Invalid data types
+        # Test 2.4: Invalid data types
         await self._test_invalid_data_types()
         
-        # Test 3.5: Boundary value testing
+        # Test 2.5: Boundary value testing
         await self._test_boundary_values()
     
     async def _test_invalid_project_ids(self):
@@ -552,7 +391,7 @@ class BuildingConnectedTestSuite:
                         except Exception:
                             pass
                     else:
-                        # These should return 404 or similar from API
+                        # These should return 404 from API, which get_project_details handles by returning None
                         with patch('httpx.AsyncClient') as mock_client:
                             mock_response = Mock()
                             mock_response.status_code = 404
@@ -564,9 +403,8 @@ class BuildingConnectedTestSuite:
                             mock_client.return_value.__aenter__.return_value.get.return_value = mock_response
                             
                             try:
-                                await client.get_project_details(invalid_id)
-                            except BuildingConnectedError as e:
-                                if e.status_code == 404:
+                                result = await client.get_project_details(invalid_id)
+                                if result is None:  # get_project_details returns None for 404
                                     handled_correctly += 1
                             except Exception:
                                 pass
@@ -776,19 +614,19 @@ class BuildingConnectedTestSuite:
     # =============================================================================
     
     async def _test_network_resilience(self):
-        """Test 4: Network resilience scenarios"""
-        logger.info("🌐 Test Category 4: Network Resilience")
+        """Test 3: Network resilience scenarios"""
+        logger.info("🌐 Test Category 3: Network Resilience")
         
-        # Test 4.1: Connection timeout
+        # Test 3.1: Connection timeout
         await self._test_connection_timeout()
         
-        # Test 4.2: DNS resolution failure
+        # Test 3.2: DNS resolution failure
         await self._test_dns_failure()
         
-        # Test 4.3: SSL/TLS errors
+        # Test 3.3: SSL/TLS errors
         await self._test_ssl_errors()
         
-        # Test 4.4: Intermittent connectivity
+        # Test 3.4: Intermittent connectivity
         await self._test_intermittent_connectivity()
     
     async def _test_connection_timeout(self):
@@ -931,19 +769,19 @@ class BuildingConnectedTestSuite:
     # =============================================================================
     
     async def _test_pagination_handling(self):
-        """Test 5: Pagination handling scenarios"""
-        logger.info("📄 Test Category 5: Pagination Handling")
+        """Test 4: Pagination handling scenarios"""
+        logger.info("📄 Test Category 4: Pagination Handling")
         
-        # Test 5.1: Missing next URL
+        # Test 4.1: Missing next URL
         await self._test_missing_next_url()
         
-        # Test 5.2: Infinite pagination loop
+        # Test 4.2: Infinite pagination loop
         await self._test_infinite_pagination()
         
-        # Test 5.3: Malformed pagination URLs
+        # Test 4.3: Malformed pagination URLs
         await self._test_malformed_pagination_urls()
         
-        # Test 5.4: Empty paginated results
+        # Test 4.4: Empty paginated results
         await self._test_empty_paginated_results()
     
     async def _test_missing_next_url(self):
@@ -1196,19 +1034,19 @@ class BuildingConnectedTestSuite:
     # =============================================================================
     
     async def _test_workflow_integration(self):
-        """Test 6: Workflow integration scenarios"""
-        logger.info("🔄 Test Category 6: Workflow Integration")
+        """Test 5: Workflow integration scenarios"""
+        logger.info("🔄 Test Category 5: Workflow Integration")
         
-        # Test 6.1: Node failure propagation
+        # Test 5.1: Node failure propagation
         await self._test_node_failure_propagation()
         
-        # Test 6.2: State corruption handling
+        # Test 5.2: State corruption handling
         await self._test_state_corruption()
         
-        # Test 6.3: Email integration failures
+        # Test 5.3: Email integration failures
         await self._test_email_integration_failures()
         
-        # Test 6.4: Concurrent access scenarios
+        # Test 5.4: Concurrent access scenarios
         await self._test_concurrent_access()
     
     async def _test_node_failure_propagation(self):
@@ -1382,19 +1220,19 @@ class BuildingConnectedTestSuite:
     # =============================================================================
     
     async def _test_edge_cases(self):
-        """Test 7: Edge case scenarios"""
-        logger.info("🎯 Test Category 7: Edge Cases")
+        """Test 6: Edge case scenarios"""
+        logger.info("🎯 Test Category 6: Edge Cases")
         
-        # Test 7.1: Empty project lists
+        # Test 6.1: Empty project lists
         await self._test_empty_project_lists()
         
-        # Test 7.2: Extremely large datasets
+        # Test 6.2: Extremely large datasets
         await self._test_large_datasets()
         
-        # Test 7.3: Special characters in data
+        # Test 6.3: Special characters in data
         await self._test_special_characters()
         
-        # Test 7.4: Timezone edge cases
+        # Test 6.4: Timezone edge cases
         await self._test_timezone_edge_cases()
     
     async def _test_empty_project_lists(self):
@@ -1595,16 +1433,16 @@ class BuildingConnectedTestSuite:
     # =============================================================================
     
     async def _test_performance_scenarios(self):
-        """Test 8: Performance scenarios"""
-        logger.info("⚡ Test Category 8: Performance Scenarios")
+        """Test 7: Performance scenarios"""
+        logger.info("⚡ Test Category 7: Performance Scenarios")
         
-        # Test 8.1: Memory usage with large datasets
+        # Test 7.1: Memory usage with large datasets
         await self._test_memory_usage()
         
-        # Test 8.2: Response time under load
+        # Test 7.2: Response time under load
         await self._test_response_times()
         
-        # Test 8.3: Resource cleanup
+        # Test 7.3: Resource cleanup
         await self._test_resource_cleanup()
     
     async def _test_memory_usage(self):
