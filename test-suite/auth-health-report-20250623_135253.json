@@ -1,0 +1,174 @@
+{
+  "timestamp": "2025-06-23T13:52:49.839312",
+  "overall_status": "WARNING",
+  "total_tests": 9,
+  "passed_tests": 6,
+  "failed_tests": 3,
+  "execution_time_ms": 3707,
+  "critical_failures": [],
+  "warnings": [
+    "BuildingConnected API call failed (may be transient): BuildingConnected API Error 500: Unexpected error getting projects: Token refresh failed: 400 - {\"error\":\"invalid_grant\",\"error_description\":\"The refresh token is invalid or expired.\"}\n",
+    "Token expiration check failed: Token refresh failed: 400 - {\"error\":\"invalid_grant\",\"error_description\":\"The refresh token is invalid or expired.\"}\n",
+    "Rate limiting test failed: BuildingConnected API Error 500: Unexpected error getting projects: Token refresh failed: 400 - {\"error\":\"invalid_grant\",\"error_description\":\"The refresh token is invalid or expired.\"}\n"
+  ],
+  "test_results": [
+    {
+      "test_name": "env_variables",
+      "passed": true,
+      "message": "\u2705 All required environment variables are present",
+      "execution_time_ms": 0,
+      "details": {
+        "microsoft_variables": {
+          "MS_CLIENT_ID": "\u2705 Present",
+          "MS_CLIENT_SECRET": "\u2705 Present",
+          "ENCRYPTED_REFRESH_TOKEN": "\u2705 Present",
+          "ENCRYPTION_KEY": "\u2705 Present"
+        },
+        "buildingconnected_variables": {
+          "AUTODESK_CLIENT_ID": "\u2705 Present",
+          "AUTODESK_CLIENT_SECRET": "\u2705 Present",
+          "AUTODESK_ENCRYPTED_REFRESH_TOKEN": "\u2705 Present",
+          "AUTODESK_ENCRYPTION_KEY": "\u2705 Present"
+        },
+        "missing_microsoft": [],
+        "missing_buildingconnected": []
+      }
+    },
+    {
+      "test_name": "token_manager_creation",
+      "passed": true,
+      "message": "\u2705 Both token managers created successfully",
+      "execution_time_ms": 0,
+      "details": {
+        "microsoft_success": true,
+        "microsoft_error": null,
+        "buildingconnected_success": true,
+        "buildingconnected_error": null
+      }
+    },
+    {
+      "test_name": "token_decryption",
+      "passed": true,
+      "message": "\u2705 Both refresh tokens decrypted successfully",
+      "execution_time_ms": 9,
+      "details": {
+        "microsoft_decrypt_success": true,
+        "microsoft_decrypt_error": null,
+        "buildingconnected_decrypt_success": true,
+        "buildingconnected_decrypt_error": null
+      }
+    },
+    {
+      "test_name": "token_refresh",
+      "passed": true,
+      "message": "\u2705 Both access tokens refreshed successfully",
+      "execution_time_ms": 704,
+      "details": {
+        "microsoft_refresh_success": true,
+        "microsoft_refresh_error": null,
+        "microsoft_token_info": {
+          "token_length": 1440,
+          "token_prefix": "EwA4BMl6BAAUBKgm8k1U...",
+          "expires_at": 1750715569276
+        },
+        "buildingconnected_refresh_success": true,
+        "buildingconnected_refresh_error": null,
+        "buildingconnected_token_info": {
+          "token_length": 896,
+          "token_prefix": "eyJhbGciOiJSUzI1NiIs...",
+          "expires_at": 1750716469550
+        }
+      }
+    },
+    {
+      "test_name": "api_client_creation",
+      "passed": true,
+      "message": "\u2705 Both API clients created successfully",
+      "execution_time_ms": 0,
+      "details": {
+        "microsoft_client_success": true,
+        "microsoft_client_error": null,
+        "buildingconnected_client_success": true,
+        "buildingconnected_client_error": null
+      }
+    },
+    {
+      "test_name": "authentication_endpoints",
+      "passed": false,
+      "message": "\u274c API endpoint validation failed",
+      "execution_time_ms": 956,
+      "details": {
+        "microsoft_api_success": true,
+        "microsoft_api_error": null,
+        "microsoft_api_details": {
+          "response_keys": [
+            "@odata.context",
+            "value",
+            "@odata.nextLink"
+          ],
+          "has_value": true
+        },
+        "buildingconnected_api_success": false,
+        "buildingconnected_api_error": "BuildingConnected API Error 500: Unexpected error getting projects: Token refresh failed: 400 - {\"error\":\"invalid_grant\",\"error_description\":\"The refresh token is invalid or expired.\"}\n",
+        "buildingconnected_api_details": {}
+      }
+    },
+    {
+      "test_name": "token_expiration",
+      "passed": false,
+      "message": "\u26a0\ufe0f Token expiration concerns detected",
+      "execution_time_ms": 629,
+      "details": {
+        "microsoft": {
+          "expires_at": 1750715570946,
+          "minutes_until_expiry": 59.98331666666667,
+          "expires_at_readable": "2025-06-23T21:52:50.946000+00:00"
+        }
+      }
+    },
+    {
+      "test_name": "rate_limiting",
+      "passed": false,
+      "message": "\u26a0\ufe0f Rate limiting issues detected",
+      "execution_time_ms": 1007,
+      "details": {
+        "microsoft": {
+          "call_times_ms": [
+            497.64799999999997,
+            151.314,
+            155.701
+          ],
+          "avg_call_time_ms": 268.221
+        }
+      }
+    },
+    {
+      "test_name": "network_resilience",
+      "passed": true,
+      "message": "\u2705 Network connectivity verified",
+      "execution_time_ms": 399,
+      "details": {
+        "Microsoft Token Endpoint": {
+          "status_code": 200,
+          "response_time_ms": 160.59599999999998,
+          "reachable": true
+        },
+        "Microsoft Graph API": {
+          "status_code": 200,
+          "response_time_ms": 84.15599999999999,
+          "reachable": true
+        },
+        "Autodesk Token Endpoint": {
+          "status_code": 404,
+          "response_time_ms": 96.85000000000001,
+          "reachable": true
+        },
+        "BuildingConnected API": {
+          "status_code": 404,
+          "response_time_ms": 43.215,
+          "reachable": true
+        }
+      }
+    }
+  ]
+}
