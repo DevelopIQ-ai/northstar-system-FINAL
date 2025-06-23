@@ -19,8 +19,8 @@ from auth.auth_helpers import (
     MSGraphTokenManager,
     BuildingConnectedTokenManager
 )
-from graph_api_client import MSGraphClient, EmailImportance
-from buildingconnected_client import BuildingConnectedClient, Project
+from clients.graph_api_client import MSGraphClient, EmailImportance
+from clients.buildingconnected_client import BuildingConnectedClient, Project
 
 load_dotenv()
 

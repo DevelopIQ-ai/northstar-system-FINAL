@@ -127,7 +127,7 @@ result = await run_bid_reminder()
 ### Direct BuildingConnected API Usage
 ```python
 from auth.auth_helpers import create_buildingconnected_token_manager_from_env
-from buildingconnected_client import BuildingConnectedClient
+from clients.buildingconnected_client import BuildingConnectedClient
 
 token_manager = create_buildingconnected_token_manager_from_env()
 client = BuildingConnectedClient(token_manager)

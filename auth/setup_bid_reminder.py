@@ -236,8 +236,8 @@ def test_configuration():
             
             # Test authentication only (don't run full workflow)
             from auth.auth_helpers import create_token_manager_from_env, create_buildingconnected_token_manager_from_env
-            from graph_api_client import MSGraphClient
-            from buildingconnected_client import BuildingConnectedClient
+            from clients.graph_api_client import MSGraphClient
+            from clients.buildingconnected_client import BuildingConnectedClient
             
             print("Testing Outlook authentication...")
             try:
