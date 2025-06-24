@@ -5,6 +5,7 @@ Checks BuildingConnected for projects due in 5-10 days and sends reminder emails
 
 import os
 import logging
+import random
 from typing import Optional, List
 from datetime import datetime
 
@@ -527,92 +528,159 @@ class BidReminderAgent:
         logger.info("🔄 Prepare next run node completed")
         return state
     
-    def _create_personalized_invitation_email(self, invitation: BiddingInvitationData, project: Optional[Project]) -> str:
-        """Create personalized HTML email for bidding invitation with LinkToBid button"""
+    def _get_greeting(self, first_name: str) -> str:
+        """Get a random greeting variation"""
+        # Handle empty or missing first names
+        if not first_name or first_name.strip() == "":
+            greetings = [
+                "Hey there",
+                "Hi there",
+                "Hello",
+                "Good morning",
+                "Hope you're doing well",
+                "Greetings",
+            ]
+        else:
+            greetings = [
+                f"Hey {first_name}",
+                f"Hi {first_name}",
+                f"Hello {first_name}",
+                f"Good morning {first_name}",
+                f"Hope you're doing well {first_name}",
+                f"Hi there {first_name}",
+            ]
+        return random.choice(greetings)
+    
+    def _get_intro(self, project_name: str, bid_package_name: str) -> str:
+        """Get a random intro variation"""
+        intros = [
+            f"I wanted to personally invite you to bid on our project, {project_name}, for the {bid_package_name} bid package.",
+            f"I'm reaching out to invite you to submit a bid for {project_name}, specifically for the {bid_package_name} package.",
+            f"We have an exciting opportunity for you to bid on {project_name} - the {bid_package_name} bid package.",
+            f"I'd love to have you consider bidding on our {project_name} project for the {bid_package_name} work.",
+            f"I'm personally inviting you to participate in our {project_name} project bidding for the {bid_package_name} package.",
+            f"We're looking for quality contractors to bid on {project_name}, and I think you'd be perfect for the {bid_package_name} work.",
+            f"I wanted to extend a personal invitation for you to bid on the {bid_package_name} package for our {project_name} project.",
+        ]
+        return random.choice(intros)
+    
+    def _get_timing_info(self, days_until_due: int) -> str:
+        """Get a random timing information variation"""
+        # Handle singular vs plural
+        day_word = "day" if days_until_due == 1 else "days"
         
-        # Format the due date if available
-        due_date_formatted = "Not specified"
-        if project and project.bidsDueAt:
-            try:
-                due_date = datetime.fromisoformat(project.bidsDueAt.replace('Z', '+00:00'))
-                due_date_formatted = due_date.strftime('%A, %B %d, %Y at %I:%M %p')
-            except:
-                due_date_formatted = project.bidsDueAt
+        if days_until_due <= 5:
+            urgent_phrases = [
+                f"Bids are due in just {days_until_due} {day_word}",
+                f"The deadline is coming up fast - only {days_until_due} {day_word} left",
+                f"Time is running short with {days_until_due} {day_word} remaining",
+                f"We're down to {days_until_due} {day_word} until the bid deadline",
+            ]
+            return random.choice(urgent_phrases)
+        else:
+            normal_phrases = [
+                f"Bids are due in {days_until_due} {day_word}",
+                f"You have {days_until_due} {day_word} to submit your bid",
+                f"The deadline is {days_until_due} {day_word} away",
+                f"We're looking for submissions within {days_until_due} {day_word}",
+            ]
+            return random.choice(normal_phrases)
+    
+    def _get_portal_access(self, link: str) -> str:
+        """Get a random portal access variation"""
+        portal_phrases = [
+            f"and you can access the portal here: {link}",
+            f" - you can find all the details and submit your bid at: {link}",
+            f" - the bid portal is available at: {link}",
+            f" - access the full project details and submit your bid here: {link}",
+            f" - all project documents and the bidding portal are at: {link}",
+            f" - you can review everything and submit your bid at: {link}",
+        ]
+        return random.choice(portal_phrases)
+    
+    def _get_closing_sentiment(self) -> str:
+        """Get a random closing sentiment"""
+        closings = [
+            "I'm looking forward to potentially working with you!",
+            "Hope to see your bid come through!",
+            "Looking forward to your submission!",
+            "I'd be excited to work with you on this project!",
+            "Hope we can partner together on this one!",
+            "Looking forward to a great partnership!",
+            "Can't wait to see what you put together!",
+            "Hope this opportunity interests you!",
+        ]
+        return random.choice(closings)
+    
+    def _get_signature(self) -> str:
+        """Get Paul Herndon's email signature with links"""
+        return """Best regards,
+<br /><br />
+<strong>Paul Herndon</strong><br>
+<a href="tel:+12819353863">281-935-3863</a>
+
+<strong>Offices:</strong> <a href="https://maps.google.com/?q=Houston,TX">Houston</a> | <a href="https://maps.google.com/?q=San Antonio,TX">San Antonio</a><br>
+<strong>Website:</strong> <a href="https://www.buildncs.com">www.buildncs.com</a>"""
+    
+    def _calculate_days_until_due(self, project: Optional[Project]) -> int:
+        """Calculate days until bid is due"""
+        if not project or not project.bidsDueAt:
+            return 7  # Default fallback
+        
+        try:
+            due_date = datetime.fromisoformat(project.bidsDueAt.replace('Z', '+00:00'))
+            days_diff = (due_date.date() - datetime.now().date()).days
+            return max(1, days_diff)  # Ensure at least 1 day
+        except:
+            return 7  # Default fallback
+    
+    def _create_personalized_invitation_email(self, invitation: BiddingInvitationData, project: Optional[Project]) -> str:
+        """Create personalized HTML email for bidding invitation using random variations"""
         
         # Determine project name - use bid package name as fallback
         project_name = project.name if project else invitation.bidPackageName
         
-        # Create the HTML email template
-        html_template = f"""
-        <html>
-        <head>
-            <style>
-                body {{ font-family: Arial, sans-serif; line-height: 1.6; color: #333; }}
-                .container {{ max-width: 600px; margin: 0 auto; padding: 20px; }}
-                .header {{ background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 30px; text-align: center; border-radius: 10px 10px 0 0; }}
-                .content {{ background: #f9f9f9; padding: 30px; border-radius: 0 0 10px 10px; }}
-                .project-details {{ background: white; padding: 20px; border-radius: 8px; margin: 20px 0; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }}
-                .cta-button {{ display: inline-block; background: #28a745; color: white; padding: 15px 30px; text-decoration: none; border-radius: 5px; font-weight: bold; margin: 20px 0; text-align: center; }}
-                .cta-button:hover {{ background: #218838; }}
-                .footer {{ text-align: center; margin-top: 30px; color: #666; font-size: 12px; }}
-                .urgent {{ color: #dc3545; font-weight: bold; }}
-                .highlight {{ background: #fff3cd; padding: 10px; border-left: 4px solid #ffc107; margin: 15px 0; }}
-            </style>
-        </head>
-        <body>
-            <div class="container">
-                <div class="header">
-                    <h1>🏗️ Bid Invitation</h1>
-                    <p>You're invited to submit a bid</p>
-                </div>
-                
-                <div class="content">
-                    <h2>Hello {invitation.firstName} {invitation.lastName},</h2>
-                    
-                    <p>You have been invited to submit a bid for the following project:</p>
-                    
-                    <div class="project-details">
-                        <h3>📋 Project Details</h3>
-                        <p><strong>Project:</strong> {project_name}</p>
-                        <p><strong>Bid Package:</strong> {invitation.bidPackageName}</p>
-                        <p><strong>Bid Due Date:</strong> <span class="urgent">{due_date_formatted}</span></p>
-                        {f'<p><strong>Project State:</strong> {project.state}</p>' if project and project.state else ''}
-                        {f'<p><strong>Sealed Bidding:</strong> {"Yes" if project and project.isBiddingSealed else "No"}</p>' if project else ''}
-                    </div>
-                    
-                    <div class="highlight">
-                        <p><strong>⏰ Action Required:</strong> This bid is due soon! Please review the project details and submit your bid before the deadline.</p>
-                    </div>
-                    
-                    <div style="text-align: center;">
-                        <a href="{invitation.linkToBid}" class="cta-button">
-                            🔗 Access Bid Portal
-                        </a>
-                    </div>
-                    
-                    <p><strong>Next Steps:</strong></p>
-                    <ol>
-                        <li>Click the "Access Bid Portal" button above</li>
-                        <li>Review all project documents and specifications</li>
-                        <li>Prepare and submit your bid before the deadline</li>
-                        <li>Contact the project team if you have any questions</li>
-                    </ol>
-                    
-                    <p>If you have any questions about this invitation or need assistance accessing the bid portal, please contact the project team directly.</p>
-                    
-                    <p>Good luck with your submission!</p>
-                    
-                    <div class="footer">
-                        <p><em>This invitation was automatically sent by Claude's Bid Reminder Agent.</em></p>
-                        <p><small>Generated on: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</small></p>
-                    </div>
-                </div>
-            </div>
-        </body>
-        </html>
-        """
+        # Calculate days until due
+        days_until_due = self._calculate_days_until_due(project)
         
-        return html_template
+        # Build the email using random variations
+        greeting = self._get_greeting(invitation.firstName)
+        intro = self._get_intro(project_name, invitation.bidPackageName)
+        timing = self._get_timing_info(days_until_due)
+        portal_access = self._get_portal_access(invitation.linkToBid)
+        closing = self._get_closing_sentiment()
+        signature = self._get_signature()
+        
+        # Create HTML email with proper formatting
+        email_body = f"""<html>
+<head>
+    <style>
+        body {{ font-family: Arial, sans-serif; line-height: 1.6; color: #333; }}
+        .email-content {{ margin: 0; }}
+        .signature {{ margin-top: 20px; padding-top: 15px; }}
+        a {{ color: #0066cc; text-decoration: none; }}
+        a:hover {{ text-decoration: underline; }}
+    </style>
+</head>
+<body>
+    <div class="email-content">
+        <p>{greeting},</p>
+
+        <p>{intro}</p>
+
+        <p>{timing} {portal_access}</p>
+
+        <br />
+        <p>{closing}</p>
+
+        <div class="signature">
+            {signature}
+        </div>
+    </div>
+</body>
+</html>"""
+        
+        return email_body
     
     def should_continue_after_auth(self, state: BidReminderState) -> str:
         """Continue to check projects or end on auth error"""
