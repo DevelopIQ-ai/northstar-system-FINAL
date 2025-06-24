@@ -38,7 +38,6 @@ if sentry_dsn:
                 failed_request_status_codes=[400, range(500, 600)]
             ),
             StarletteIntegration(
-                auto_session_tracking=True,
                 failed_request_status_codes=[400, range(500, 600)]
             ),
             LoggingIntegration(
