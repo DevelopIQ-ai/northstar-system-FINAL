@@ -22,7 +22,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from pydantic import BaseModel, Field
 from dotenv import load_dotenv
 
-from bid_reminder_agent import run_bid_reminder
+from bid_reminder_agent import run_bid_reminder, send_health_error_notification
 
 # Load environment variables
 load_dotenv()
@@ -87,9 +87,9 @@ async def lifespan(app: FastAPI):
     # Startup
     logger.info("🚀 Starting Bid Reminder Agent API...")
     
-    # Check environment configuration
-    outlook_vars = ['MS_CLIENT_ID', 'MS_CLIENT_SECRET', 'ENCRYPTED_REFRESH_TOKEN', 'ENCRYPTION_KEY']
-    building_vars = ['AUTODESK_CLIENT_ID', 'AUTODESK_CLIENT_SECRET', 'AUTODESK_ENCRYPTED_REFRESH_TOKEN', 'AUTODESK_ENCRYPTION_KEY']
+    # Check environment configuration (only client credentials)
+    outlook_vars = ['MS_CLIENT_ID', 'MS_CLIENT_SECRET', 'ENCRYPTION_KEY']
+    building_vars = ['AUTODESK_CLIENT_ID', 'AUTODESK_CLIENT_SECRET', 'AUTODESK_ENCRYPTION_KEY']
     
     missing_outlook = [var for var in outlook_vars if not os.getenv(var)]
     missing_building = [var for var in building_vars if not os.getenv(var)]
@@ -208,17 +208,92 @@ async def root():
 
 @app.get("/health", response_model=HealthResponse, summary="Health check")
 async def health_check():
-    """Health check endpoint to verify service status and configuration"""
-    outlook_vars = ['MS_CLIENT_ID', 'MS_CLIENT_SECRET', 'ENCRYPTED_REFRESH_TOKEN', 'ENCRYPTION_KEY']
-    building_vars = ['AUTODESK_CLIENT_ID', 'AUTODESK_CLIENT_SECRET', 'AUTODESK_ENCRYPTED_REFRESH_TOKEN', 'AUTODESK_ENCRYPTION_KEY']
+    """
+    Health check endpoint that runs the full bid reminder workflow
+    
+    This endpoint:
+    1. Runs the complete bid reminder workflow 
+    2. Checks BuildingConnected for projects due in 5-10 days
+    3. Logs bidding invitations that would be sent (but doesn't send them)
+    4. Sends a health success email to kush@developiq.ai and evan@developiq.ai
+    5. Returns configuration status
+    """
+    outlook_vars = ['MS_CLIENT_ID', 'MS_CLIENT_SECRET', 'ENCRYPTION_KEY']
+    building_vars = ['AUTODESK_CLIENT_ID', 'AUTODESK_CLIENT_SECRET', 'AUTODESK_ENCRYPTION_KEY']
     
     outlook_configured = all(os.getenv(var) for var in outlook_vars)
     building_configured = all(os.getenv(var) for var in building_vars)
     
     both_configured = outlook_configured and building_configured
     
+    # Run the bid reminder workflow in health check mode if both systems are configured
+    if both_configured:
+        try:
+            logger.info("🏥 Running health check workflow")
+            result = await run_bid_reminder(is_health=True)
+            
+            if result.get('workflow_successful', False):
+                logger.info("✅ Health check workflow completed successfully")
+                status = "healthy"
+            else:
+                error_msg = result.get('error_message', 'Unknown error')
+                logger.warning(f"⚠️ Health check workflow failed: {error_msg}")
+                status = "degraded"
+                
+                # Send error notification email
+                try:
+                    logger.info("📧 Sending health error notification")
+                    error_sent = await send_health_error_notification(
+                        error_message=error_msg,
+                        error_stage="Workflow Execution"
+                    )
+                    if error_sent:
+                        logger.info("✅ Health error notification sent successfully")
+                    else:
+                        logger.warning("⚠️ Failed to send health error notification")
+                except Exception as email_error:
+                    logger.error(f"❌ Error sending health error notification: {str(email_error)}")
+                
+        except Exception as e:
+            error_msg = str(e)
+            logger.error(f"❌ Health check workflow error: {error_msg}")
+            status = "degraded"
+            
+            # Send error notification email for unexpected exceptions
+            try:
+                logger.info("📧 Sending health error notification for exception")
+                error_sent = await send_health_error_notification(
+                    error_message=f"Health check threw an exception: {error_msg}",
+                    error_stage="Workflow Exception"
+                )
+                if error_sent:
+                    logger.info("✅ Health exception notification sent successfully")
+                else:
+                    logger.warning("⚠️ Failed to send health exception notification")
+            except Exception as email_error:
+                logger.error(f"❌ Error sending health exception notification: {str(email_error)}")
+                
+    else:
+        status = "degraded"
+        error_msg = f"Health check skipped - missing configuration. Outlook: {outlook_configured}, BuildingConnected: {building_configured}"
+        logger.warning(f"⚠️ {error_msg}")
+        
+        # Send error notification for configuration issues
+        try:
+            logger.info("📧 Sending health error notification for configuration")
+            error_sent = await send_health_error_notification(
+                error_message=error_msg,
+                error_stage="Configuration Check"
+            )
+            if error_sent:
+                logger.info("✅ Health configuration error notification sent successfully")
+            else:
+                logger.warning("⚠️ Failed to send health configuration error notification")
+        except Exception as email_error:
+            logger.error(f"❌ Error sending health configuration error notification: {str(email_error)}")
+    
     return HealthResponse(
-        status="healthy" if both_configured else "degraded",
+        status=status,
         outlook_configured=outlook_configured,
         building_configured=building_configured
     )
@@ -236,7 +311,7 @@ async def run_bid_reminder_workflow():
     """
     try:
         # Run the bid reminder workflow
-        result = await run_bid_reminder()
+        result = await run_bid_reminder(is_health=False)
         
         # Extract project count
         upcoming_projects = result.get("upcoming_projects", [])

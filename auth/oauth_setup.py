@@ -22,8 +22,14 @@ from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 from cryptography.hazmat.backends import default_backend
 from dotenv import load_dotenv, set_key
 
+# Import the new JSON token storage
+from .token_storage import TokenStorage
+
 # Load environment variables
 load_dotenv()
+
+# Initialize token storage
+token_storage = TokenStorage()
 
 # =============================================================================
 # CONFIGURATION CONSTANTS - Read from environment with defaults
@@ -239,8 +245,8 @@ async def run_oauth_flow(
         raise e
 
 
-async def setup_microsoft_oauth(client_id: str, client_secret: str) -> Tuple[str, str]:
-    """Setup Microsoft Graph OAuth and return encrypted refresh token and encryption key"""
+async def setup_microsoft_oauth(client_id: str, client_secret: str) -> Tuple[str, str, str]:
+    """Setup Microsoft Graph OAuth and return refresh token, encrypted refresh token, and encryption key"""
     
     callback_url = f"http://localhost:{MICROSOFT_CALLBACK_PORT}{MICROSOFT_CALLBACK_PATH}"
     
@@ -277,11 +283,11 @@ async def setup_microsoft_oauth(client_id: str, client_secret: str) -> Tuple[str
     
     print("🔒 Tokens encrypted and ready for storage!")
     
-    return encrypted_refresh_token, encryption_key
+    return refresh_token, encrypted_refresh_token, encryption_key
 
 
-async def setup_autodesk_oauth(client_id: str, client_secret: str) -> Tuple[str, str]:
-    """Setup Autodesk/BuildingConnected OAuth and return encrypted refresh token and encryption key"""
+async def setup_autodesk_oauth(client_id: str, client_secret: str) -> Tuple[str, str, str]:
+    """Setup Autodesk/BuildingConnected OAuth and return refresh token, encrypted refresh token, and encryption key"""
     
     callback_url = f"http://localhost:{AUTODESK_CALLBACK_PORT}{AUTODESK_CALLBACK_PATH}"
     
@@ -318,13 +324,32 @@ async def setup_autodesk_oauth(client_id: str, client_secret: str) -> Tuple[str,
     
     print("🔒 Tokens encrypted and ready for storage!")
     
-    return encrypted_refresh_token, encryption_key
+    return refresh_token, encrypted_refresh_token, encryption_key
 
 
 def save_to_env(key: str, value: str):
-    """Save key-value pair to .env file"""
+    """Save key-value pair to .env file (for backward compatibility)"""
     set_key('.env', key, value)
-    print(f"✅ Saved {key} to .env file")
+    print(f"✅ Saved {key} to .env file (backup)")
+
+def save_refresh_token_to_json(service: str, refresh_token: str, encryption_key: str):
+    """Save encrypted refresh token to JSON storage"""
+    success = token_storage.save_refresh_token(service, refresh_token, encryption_key)
+    
+    if success:
+        print(f"✅ Saved {service} refresh token to JSON storage")
+        
+        # Verify the save immediately
+        verification_token = token_storage.load_refresh_token(service, encryption_key)
+        if verification_token == refresh_token:
+            print(f"✅ {service} token save verification successful")
+        else:
+            print(f"❌ {service} token save verification failed!")
+            
+        return True
+    else:
+        print(f"❌ Failed to save {service} refresh token to JSON storage")
+        return False
 
 
 async def setup_microsoft_auth_flow():
@@ -353,14 +378,22 @@ async def setup_microsoft_auth_flow():
         return False
     
     try:
-        encrypted_token, encryption_key = await setup_microsoft_oauth(client_id, client_secret)
+        refresh_token, encrypted_token, encryption_key = await setup_microsoft_oauth(client_id, client_secret)
         
-        # Save to .env file
+        # Save to JSON storage (primary)
+        json_success = save_refresh_token_to_json('microsoft', refresh_token, encryption_key)
+        
+        # Save to .env file (backup)
         save_to_env('ENCRYPTED_REFRESH_TOKEN', encrypted_token)
         save_to_env('ENCRYPTION_KEY', encryption_key)
         
-        print("✅ Microsoft Graph authentication setup complete!")
-        return True
+        if json_success:
+            print("✅ Microsoft Graph authentication setup complete!")
+            print("📁 Token saved to JSON storage with .env backup")
+            return True
+        else:
+            print("⚠️ JSON storage failed, but .env backup saved")
+            return True
         
     except Exception as e:
         print(f"❌ Microsoft authentication failed: {str(e)}")
@@ -393,14 +426,22 @@ async def setup_autodesk_auth_flow():
         return False
     
     try:
-        encrypted_token, encryption_key = await setup_autodesk_oauth(client_id, client_secret)
+        refresh_token, encrypted_token, encryption_key = await setup_autodesk_oauth(client_id, client_secret)
         
-        # Save to .env file
+        # Save to JSON storage (primary)
+        json_success = save_refresh_token_to_json('autodesk', refresh_token, encryption_key)
+        
+        # Save to .env file (backup)
         save_to_env('AUTODESK_ENCRYPTED_REFRESH_TOKEN', encrypted_token)
         save_to_env('AUTODESK_ENCRYPTION_KEY', encryption_key)
         
-        print("✅ Autodesk/BuildingConnected authentication setup complete!")
-        return True
+        if json_success:
+            print("✅ Autodesk/BuildingConnected authentication setup complete!")
+            print("📁 Token saved to JSON storage with .env backup")
+            return True
+        else:
+            print("⚠️ JSON storage failed, but .env backup saved")
+            return True
         
     except Exception as e:
         print(f"❌ Autodesk authentication failed: {str(e)}")
