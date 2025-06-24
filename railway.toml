@@ -40,6 +40,10 @@ AUTODESK_ENCRYPTION_KEY = { required = true, description = "Encryption key for A
 # Email settings
 DEFAULT_EMAIL_RECIPIENT = { required = true, description = "Default email address for bid reminders" }
 
+# Sentry Error Monitoring
+SENTRY_DSN = { required = false, description = "Sentry DSN for error monitoring and logging" }
+SENTRY_DEBUG = { required = false, description = "Enable Sentry debug mode (true/false)" }
+
 # Optional OAuth configuration overrides
 MICROSOFT_AUTH_URL = { required = false, description = "Microsoft OAuth authorization URL" }
 MICROSOFT_TOKEN_URL = { required = false, description = "Microsoft OAuth token URL" }

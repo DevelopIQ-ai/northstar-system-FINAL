@@ -34,25 +34,40 @@ if sentry_dsn:
     sentry_sdk.init(
         dsn=sentry_dsn,
         integrations=[
-            LoggingIntegration(level=logging.INFO, event_level=logging.ERROR),
+            LoggingIntegration(
+                level=logging.INFO,        # Capture info and above as breadcrumbs
+                event_level=logging.WARNING  # Send warnings and above as events
+            ),
         ],
         traces_sample_rate=0.1,
-        environment=os.getenv("ENVIRONMENT", "development"),
+        environment=os.getenv("ENVIRONMENT", "production"),
         release=os.getenv("RELEASE_VERSION", "1.0.0"),
         send_default_pii=False,
+        # Enhanced logging options
+        debug=os.getenv("SENTRY_DEBUG", "false").lower() == "true",
+        attach_stacktrace=True,
+        max_breadcrumbs=50,
+        before_send=lambda event, hint: event if event.get('level') != 'debug' else None,
     )
 
-# Configure logging
-import os
-os.makedirs('logs', exist_ok=True)
+# Configure logging - optimized for Railway + Sentry
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     handlers=[
-        logging.StreamHandler(),
-        logging.FileHandler('logs/bid_reminder_agent.log')
+        logging.StreamHandler(),  # Railway captures stdout/stderr
     ]
 )
+
+# Configure Sentry logging if available
+if sentry_dsn:
+    # Add custom Sentry handler for explicit log forwarding
+    sentry_handler = sentry_sdk.integrations.logging.SentryHandler()
+    sentry_handler.setLevel(logging.WARNING)  # Only send warnings and above
+    
+    # Get root logger and add Sentry handler
+    root_logger = logging.getLogger()
+    root_logger.addHandler(sentry_handler)
 logger = logging.getLogger(__name__)
 
 
