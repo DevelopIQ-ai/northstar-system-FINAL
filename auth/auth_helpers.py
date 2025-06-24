@@ -6,6 +6,7 @@ Ported from TypeScript implementation for deterministic API access
 import asyncio
 import base64
 import json
+import logging
 import os
 from datetime import datetime, timezone
 from typing import Optional, Dict, Any
@@ -16,8 +17,17 @@ from cryptography.hazmat.backends import default_backend
 from pydantic import BaseModel
 from dotenv import load_dotenv
 
+# Import the new JSON token storage
+from .token_storage import TokenStorage
+
 # Load environment variables
 load_dotenv()
+
+# Configure logging
+logger = logging.getLogger(__name__)
+
+# Initialize global token storage
+token_storage = TokenStorage()
 
 
 class TokenData(BaseModel):
@@ -34,14 +44,14 @@ class TokenManager:
         self,
         client_id: str,
         client_secret: str,
-        encrypted_refresh_token: str,
         encryption_key: str,
         token_url: str,
-        scope: str
+        scope: str,
+        encrypted_refresh_token: str = None  # Made optional - we only use tokens.json now
     ):
         self.client_id = client_id
         self.client_secret = client_secret
-        self.encrypted_refresh_token = encrypted_refresh_token
+        self.encrypted_refresh_token = encrypted_refresh_token  # Legacy field, not used anymore
         self.encryption_key = encryption_key
         self.token_url = token_url
         self.scope = scope
@@ -49,40 +59,31 @@ class TokenManager:
         self._refresh_lock = asyncio.Semaphore(1)  # Prevent concurrent refreshes
     
     async def decrypt_refresh_token(self) -> str:
-        """Decrypt the stored refresh token using AES-CBC"""
+        """Load refresh token from JSON storage only (no .env fallback)"""
         try:
-            # Parse the encrypted data format: iv:encrypted
-            iv_hex, encrypted_hex = self.encrypted_refresh_token.split(':')
+            # Determine service name based on token manager type
+            service_name = 'autodesk' if isinstance(self, BuildingConnectedTokenManager) else 'microsoft'
             
-            # Convert hex strings to bytes
-            iv = bytes.fromhex(iv_hex)
-            encrypted = bytes.fromhex(encrypted_hex)
+            # Load from JSON storage only
+            token = token_storage.load_refresh_token(service_name, self.encryption_key)
             
-            # Create key from encryption key string using SHA-256
-            import hashlib
-            key_hash = hashlib.sha256(self.encryption_key.encode()).digest()
-            
-            # Decrypt using AES-CBC
-            cipher = Cipher(
-                algorithms.AES(key_hash),
-                modes.CBC(iv),
-                backend=default_backend()
-            )
-            decryptor = cipher.decryptor()
-            decrypted = decryptor.update(encrypted) + decryptor.finalize()
-            
-            # Remove PKCS7 padding
-            padding_length = decrypted[-1]
-            return decrypted[:-padding_length].decode('utf-8')
+            if token:
+                logger.info(f"✅ Loaded {service_name} token from JSON storage (length: {len(token)})")
+                return token
+            else:
+                raise ValueError(f"No refresh token found in tokens.json for {service_name}. Please run setup_bid_reminder.py to configure authentication.")
             
         except Exception as e:
-            raise ValueError(f"Failed to decrypt refresh token: {str(e)}")
+            raise ValueError(f"Failed to load refresh token from tokens.json: {str(e)}")
     
     async def get_access_token(self) -> str:
         """Get valid access token, refreshing if necessary"""
+        service_name = 'autodesk' if isinstance(self, BuildingConnectedTokenManager) else 'microsoft'
+        
         # Check if cached token is still valid (with 60 second buffer)
         if (self._cached_token and 
             datetime.now(timezone.utc).timestamp() * 1000 < self._cached_token.expires_at - 60_000):
+            logger.info(f"🔄 Using cached {service_name} token (expires at: {datetime.fromtimestamp(self._cached_token.expires_at/1000, tz=timezone.utc)})")
             return self._cached_token.access_token
         
         # Use semaphore to prevent concurrent refresh attempts
@@ -104,6 +105,7 @@ class TokenManager:
             }
             
             async with httpx.AsyncClient(timeout=30.0) as client:
+
                 response = await client.post(
                     self.token_url,
                     data=token_data,
@@ -156,13 +158,13 @@ class TokenManager:
                 return self._cached_token.access_token
     
     async def _update_stored_refresh_token(self, new_refresh_token: str) -> None:
-        """Update the stored refresh token with new encrypted value"""
+        """Update the stored refresh token using JSON storage only"""
         try:
-            # Encrypt the new refresh token
-            encrypted_token = self._encrypt_token(new_refresh_token)
+            logger.info(f"🔄 Updating stored refresh token for {type(self).__name__}")
+            logger.info(f"🔐 New refresh token length: {len(new_refresh_token)}")
             
-            # Update environment variable in .env file
-            from dotenv import set_key
+            # Determine service name based on token manager type
+            service_name = 'autodesk' if isinstance(self, BuildingConnectedTokenManager) else 'microsoft'
             
             # Determine which env var to update based on token manager type
             if isinstance(self, BuildingConnectedTokenManager):
@@ -190,37 +192,10 @@ class TokenManager:
             
         except Exception as e:
             # Log the error but don't fail the token refresh
+
             print(f"❌ Warning: Failed to update stored refresh token: {str(e)}")
             import traceback
             traceback.print_exc()
-    
-    def _encrypt_token(self, token: str) -> str:
-        """Encrypt a token using AES-CBC (same logic as oauth_setup.py)"""
-        import os
-        import hashlib
-        
-        # Generate random IV
-        iv = os.urandom(16)
-        
-        # Create key from encryption key string using SHA-256
-        key_hash = hashlib.sha256(self.encryption_key.encode()).digest()
-        
-        # Pad the token to 16-byte boundary (PKCS7 padding)  
-        token_bytes = token.encode('utf-8')
-        padding_length = 16 - (len(token_bytes) % 16)
-        padded_token = token_bytes + bytes([padding_length] * padding_length)
-        
-        # Encrypt using AES-CBC
-        cipher = Cipher(
-            algorithms.AES(key_hash),
-            modes.CBC(iv),
-            backend=default_backend()
-        )
-        encryptor = cipher.encryptor()
-        encrypted = encryptor.update(padded_token) + encryptor.finalize()
-        
-        # Return IV and encrypted data as hex strings separated by colon
-        return f"{iv.hex()}:{encrypted.hex()}"
 
 
 class MSGraphTokenManager(TokenManager):
@@ -229,14 +204,12 @@ class MSGraphTokenManager(TokenManager):
     def __init__(
         self,
         client_id: str,
-        client_secret: str, 
-        encrypted_refresh_token: str,
+        client_secret: str,
         encryption_key: str
     ):
         super().__init__(
             client_id=client_id,
             client_secret=client_secret,
-            encrypted_refresh_token=encrypted_refresh_token,
             encryption_key=encryption_key,
             token_url=os.getenv('MICROSOFT_TOKEN_URL', 'https://login.microsoftonline.com/common/oauth2/v2.0/token'),
             scope=os.getenv('MICROSOFT_SCOPE', 'Mail.Read Mail.Send Mail.ReadWrite')
@@ -250,13 +223,11 @@ class BuildingConnectedTokenManager(TokenManager):
         self,
         client_id: str,
         client_secret: str,
-        encrypted_refresh_token: str,
         encryption_key: str
     ):
         super().__init__(
             client_id=client_id,
             client_secret=client_secret,
-            encrypted_refresh_token=encrypted_refresh_token,
             encryption_key=encryption_key,
             token_url=os.getenv('AUTODESK_TOKEN_URL', 'https://developer.api.autodesk.com/authentication/v2/token'),
             scope=os.getenv('AUTODESK_SCOPE', 'user-profile:read data:read data:write account:read account:write')
@@ -296,11 +267,10 @@ class EmailValidator:
 
 
 def create_token_manager_from_env() -> MSGraphTokenManager:
-    """Create Microsoft Graph token manager from environment variables"""
+    """Create Microsoft Graph token manager from environment variables (client credentials only)"""
     required_vars = [
         'MS_CLIENT_ID',
-        'MS_CLIENT_SECRET', 
-        'ENCRYPTED_REFRESH_TOKEN',
+        'MS_CLIENT_SECRET',
         'ENCRYPTION_KEY'
     ]
     
@@ -311,17 +281,15 @@ def create_token_manager_from_env() -> MSGraphTokenManager:
     return MSGraphTokenManager(
         client_id=os.getenv('MS_CLIENT_ID'),
         client_secret=os.getenv('MS_CLIENT_SECRET'),
-        encrypted_refresh_token=os.getenv('ENCRYPTED_REFRESH_TOKEN'),
         encryption_key=os.getenv('ENCRYPTION_KEY')
     )
 
 
 def create_buildingconnected_token_manager_from_env() -> BuildingConnectedTokenManager:
-    """Create BuildingConnected token manager from environment variables"""
+    """Create BuildingConnected token manager from environment variables (client credentials only)"""
     required_vars = [
         'AUTODESK_CLIENT_ID',
         'AUTODESK_CLIENT_SECRET',
-        'AUTODESK_ENCRYPTED_REFRESH_TOKEN',
         'AUTODESK_ENCRYPTION_KEY'
     ]
     
@@ -332,6 +300,5 @@ def create_buildingconnected_token_manager_from_env() -> BuildingConnectedTokenM
     return BuildingConnectedTokenManager(
         client_id=os.getenv('AUTODESK_CLIENT_ID'),
         client_secret=os.getenv('AUTODESK_CLIENT_SECRET'),
-        encrypted_refresh_token=os.getenv('AUTODESK_ENCRYPTED_REFRESH_TOKEN'),
         encryption_key=os.getenv('AUTODESK_ENCRYPTION_KEY')
     )

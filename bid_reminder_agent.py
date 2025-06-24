@@ -95,12 +95,16 @@ class BidReminderState(TypedDict):
 class BidReminderAgent:
     """Simple agent that checks for upcoming bids and sends reminder emails"""
     
-    def __init__(self):
+    def __init__(self, is_health: bool = False):
+        self.is_health = is_health
         self.default_recipient = os.getenv("DEFAULT_EMAIL_RECIPIENT", "kush@developiq.ai")
+        self.health_recipients = ["kush@developiq.ai", "evan@developiq.ai"]
         self.days_before_bid = [5, 6, 7, 8, 9, 10]  # Check 5-10 days before bid due
         self.run_start_time = datetime.now()
-        logger.info("BidReminderAgent initialized")
+        logger.info(f"BidReminderAgent initialized (Health Mode: {is_health})")
         logger.info(f"Default email recipient: {self.default_recipient}")
+        if is_health:
+            logger.info(f"Health check recipients: {', '.join(self.health_recipients)}")
         logger.info(f"Days before bid to check: {self.days_before_bid}")
     
     def _create_run_name(self, project_count: Optional[int] = None, success: bool = True) -> str:
@@ -323,8 +327,8 @@ class BidReminderAgent:
     
     @traceable(name="📧 Send Invitation Emails", tags=["email", "invitations"])
     async def send_reminder_email_node(self, state: BidReminderState) -> BidReminderState:
-        """Send personalized emails to each bidding invitation"""
-        logger.info("📧 Starting email sending node")
+        """Send personalized emails to each bidding invitation or health success email"""
+        logger.info(f"📧 Starting email sending node (Health Mode: {self.is_health})")
         
         if state.get("error_message"):
             logger.warning("Skipping email sending due to previous error")
@@ -348,6 +352,71 @@ class BidReminderAgent:
             }
         
         try:
+            # Health check mode - send success email instead of invitations
+            if self.is_health:
+                logger.info("🏥 Health check mode: Sending health success email")
+                
+                # Log the invitations that would have been sent (for health verification)
+                if bidding_invitations:
+                    logger.info(f"📋 Health Check - Found {len(bidding_invitations)} invitations that would be sent:")
+                    for invitation in bidding_invitations:
+                        logger.info(f"  - {invitation.firstName} {invitation.lastName} ({invitation.email}) - {invitation.bidPackageName}")
+                else:
+                    logger.info("📋 Health Check - No bidding invitations found")
+                
+                # Send health success email to administrators
+                health_subject = "✅ Bid Reminder System Health Check - SUCCESS"
+                health_body = self._create_health_success_email(upcoming_projects, bidding_invitations)
+                
+                emails_sent = 0
+                failed_emails = []
+                
+                for recipient in self.health_recipients:
+                    try:
+                        logger.info(f"Sending health success email to {recipient}")
+                        
+                        send_response = await outlook_client.send_email(
+                            to=recipient,
+                            subject=health_subject,
+                            body=health_body,
+                            importance=EmailImportance.NORMAL
+                        )
+                        
+                        if send_response.success:
+                            emails_sent += 1
+                            logger.info(f"✅ Health email sent successfully to {recipient}")
+                        else:
+                            failed_emails.append(f"{recipient}: {send_response.error}")
+                            logger.error(f"❌ Failed to send health email to {recipient}: {send_response.error}")
+                            
+                    except Exception as email_error:
+                        failed_emails.append(f"{recipient}: {str(email_error)}")
+                        logger.error(f"❌ Failed to send health email to {recipient}: {str(email_error)}")
+                
+                # Determine health check success
+                if emails_sent > 0:
+                    success_message = f"✅ Health check completed - sent {emails_sent} health success emails"
+                    if failed_emails:
+                        success_message += f", {len(failed_emails)} failed"
+                    logger.info(success_message)
+                    
+                    return {
+                        **state,
+                        "reminder_email_sent": True,
+                        "workflow_successful": True,
+                        "error_message": None
+                    }
+                else:
+                    error_message = f"Health check failed - could not send health emails. Errors: {'; '.join(failed_emails[:3])}"
+                    logger.error(error_message)
+                    return {
+                        **state,
+                        "reminder_email_sent": False,
+                        "workflow_successful": False,
+                        "error_message": error_message
+                    }
+            
+            # Normal mode - send invitation emails
             if not bidding_invitations:
                 logger.info("No bidding invitations found, no emails to send")
                 return {
@@ -448,6 +517,18 @@ class BidReminderAgent:
             result_message = f"❌ Workflow failed: {error_message}"
             workflow_successful = False
             logger.error(f"Workflow failed with error: {error_message}")
+            
+            # Send error email if in health mode and workflow failed
+            if self.is_health:
+                try:
+                    logger.info("🏥 Health mode: Sending error notification")
+                    error_sent = await self.send_health_error_email(error_message, "Workflow Failed")
+                    if error_sent:
+                        logger.info("✅ Health error notification sent from workflow")
+                    else:
+                        logger.warning("⚠️ Failed to send health error notification from workflow")
+                except Exception as email_error:
+                    logger.error(f"❌ Error sending health error notification from workflow: {str(email_error)}")
         else:
             project_count = len(upcoming_projects)
             invitation_count = len(bidding_invitations) if bidding_invitations else 0
@@ -614,6 +695,242 @@ class BidReminderAgent:
         
         return html_template
     
+    def _create_health_success_email(self, projects: Optional[List[Project]], invitations: Optional[List[BiddingInvitationData]]) -> str:
+        """Create health success email for administrators"""
+        
+        project_count = len(projects) if projects else 0
+        invitation_count = len(invitations) if invitations else 0
+        
+        # Create summary of what was found
+        projects_summary = ""
+        if projects:
+            projects_summary = "<ul>"
+            for project in projects[:10]:  # Show first 10 projects
+                due_date = "Not specified"
+                if project.bidsDueAt:
+                    try:
+                        due_date_obj = datetime.fromisoformat(project.bidsDueAt.replace('Z', '+00:00'))
+                        due_date = due_date_obj.strftime('%B %d, %Y at %I:%M %p')
+                    except:
+                        due_date = project.bidsDueAt
+                projects_summary += f"<li><strong>{project.name}</strong> - Due: {due_date}</li>"
+            projects_summary += "</ul>"
+            if len(projects) > 10:
+                projects_summary += f"<p><em>... and {len(projects) - 10} more projects</em></p>"
+        else:
+            projects_summary = "<p><em>No projects found due in 5-10 days</em></p>"
+        
+        # Create summary of invitations that would be sent
+        invitations_summary = ""
+        if invitations:
+            invitations_summary = "<ul>"
+            for invitation in invitations[:20]:  # Show first 20 invitations
+                invitations_summary += f"<li><strong>{invitation.firstName} {invitation.lastName}</strong> ({invitation.email}) - {invitation.bidPackageName}</li>"
+            invitations_summary += "</ul>"
+            if len(invitations) > 20:
+                invitations_summary += f"<p><em>... and {len(invitations) - 20} more invitations</em></p>"
+        else:
+            invitations_summary = "<p><em>No bidding invitations found</em></p>"
+        
+        html_template = f"""
+        <html>
+        <head>
+            <style>
+                body {{ font-family: Arial, sans-serif; line-height: 1.6; color: #333; }}
+                .container {{ max-width: 700px; margin: 0 auto; padding: 20px; }}
+                .header {{ background: linear-gradient(135deg, #28a745 0%, #20c997 100%); color: white; padding: 30px; text-align: center; border-radius: 10px 10px 0 0; }}
+                .content {{ background: #f8f9fa; padding: 30px; border-radius: 0 0 10px 10px; }}
+                .status-box {{ background: #d4edda; border: 1px solid #c3e6cb; border-radius: 8px; padding: 20px; margin: 20px 0; }}
+                .summary-section {{ background: white; padding: 20px; border-radius: 8px; margin: 20px 0; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }}
+                .metrics {{ display: flex; justify-content: space-around; margin: 20px 0; }}
+                .metric {{ text-align: center; }}
+                .metric-value {{ font-size: 2em; font-weight: bold; color: #28a745; }}
+                .metric-label {{ color: #666; font-size: 0.9em; }}
+                .footer {{ text-align: center; margin-top: 30px; color: #666; font-size: 12px; }}
+                ul {{ list-style-type: none; padding-left: 0; }}
+                li {{ padding: 5px 0; border-bottom: 1px solid #eee; }}
+                li:last-child {{ border-bottom: none; }}
+                .success-icon {{ font-size: 2em; }}
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <div class="header">
+                    <div class="success-icon">✅</div>
+                    <h1>Bid Reminder System Health Check</h1>
+                    <p>System Status: <strong>HEALTHY</strong></p>
+                </div>
+                
+                <div class="content">
+                    <div class="status-box">
+                        <h2>🎉 Health Check Successful!</h2>
+                        <p>The Bid Reminder System has completed a full health check successfully. All components are working properly:</p>
+                        <ul>
+                            <li>✅ Authentication systems (Outlook & BuildingConnected)</li>
+                            <li>✅ Project data retrieval</li>
+                            <li>✅ Bidding invitation processing</li>
+                            <li>✅ Email system functionality</li>
+                        </ul>
+                    </div>
+                    
+                    <div class="metrics">
+                        <div class="metric">
+                            <div class="metric-value">{project_count}</div>
+                            <div class="metric-label">Projects Due<br/>(5-10 days)</div>
+                        </div>
+                        <div class="metric">
+                            <div class="metric-value">{invitation_count}</div>
+                            <div class="metric-label">Bidding<br/>Invitations</div>
+                        </div>
+                    </div>
+                    
+                    <div class="summary-section">
+                        <h3>📋 Projects Found (Due in 5-10 days)</h3>
+                        {projects_summary}
+                    </div>
+                    
+                    <div class="summary-section">
+                        <h3>📧 Bidding Invitations (Would be sent in normal mode)</h3>
+                        <p><strong>Note:</strong> In health check mode, no actual emails are sent to bidders. This is just a verification of what would happen.</p>
+                        {invitations_summary}
+                    </div>
+                    
+                    <div class="summary-section">
+                        <h3>🔧 System Information</h3>
+                        <p><strong>Check performed:</strong> {datetime.now().strftime('%A, %B %d, %Y at %I:%M %p')}</p>
+                        <p><strong>Mode:</strong> Health Check (no emails sent to bidders)</p>
+                        <p><strong>Environment:</strong> {os.getenv("ENVIRONMENT", "production")}</p>
+                    </div>
+                    
+                    <div class="footer">
+                        <p><em>This health check was automatically performed by the Bid Reminder Agent.</em></p>
+                        <p><small>If you have any concerns about the system status, please contact the development team.</small></p>
+                    </div>
+                </div>
+            </div>
+        </body>
+        </html>
+        """
+        
+        return html_template
+    
+    def _create_health_error_email(self, error_message: str, error_stage: str = "Unknown") -> str:
+        """Create health error email for administrators"""
+        
+        html_template = f"""
+        <html>
+        <head>
+            <style>
+                body {{ font-family: Arial, sans-serif; line-height: 1.6; color: #333; }}
+                .container {{ max-width: 700px; margin: 0 auto; padding: 20px; }}
+                .header {{ background: linear-gradient(135deg, #dc3545 0%, #c82333 100%); color: white; padding: 30px; text-align: center; border-radius: 10px 10px 0 0; }}
+                .content {{ background: #f8f9fa; padding: 30px; border-radius: 0 0 10px 10px; }}
+                .error-box {{ background: #f8d7da; border: 1px solid #f5c6cb; border-radius: 8px; padding: 20px; margin: 20px 0; }}
+                .error-details {{ background: #fff3cd; border: 1px solid #ffeeba; border-radius: 8px; padding: 15px; margin: 15px 0; font-family: monospace; font-size: 0.9em; }}
+                .summary-section {{ background: white; padding: 20px; border-radius: 8px; margin: 20px 0; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }}
+                .footer {{ text-align: center; margin-top: 30px; color: #666; font-size: 12px; }}
+                .error-icon {{ font-size: 2em; }}
+                .status-item {{ margin: 10px 0; }}
+                .status-item.failed {{ color: #dc3545; }}
+                .status-item.unknown {{ color: #6c757d; }}
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <div class="header">
+                    <div class="error-icon">❌</div>
+                    <h1>Bid Reminder System Health Check</h1>
+                    <p>System Status: <strong>ERROR</strong></p>
+                </div>
+                
+                <div class="content">
+                    <div class="error-box">
+                        <h2>🚨 Health Check Failed!</h2>
+                        <p>The Bid Reminder System health check encountered an error and could not complete successfully.</p>
+                        <p><strong>Error Stage:</strong> {error_stage}</p>
+                    </div>
+                    
+                    <div class="summary-section">
+                        <h3>🔍 Error Details</h3>
+                        <div class="error-details">
+                            {error_message}
+                        </div>
+                    </div>
+                    
+                    <div class="summary-section">
+                        <h3>🔧 System Status</h3>
+                        <div class="status-item failed">❌ Health check failed</div>
+                        <div class="status-item unknown">❓ Authentication status: Unknown</div>
+                        <div class="status-item unknown">❓ Project retrieval: Unknown</div>
+                        <div class="status-item unknown">❓ Email system: Unknown</div>
+                    </div>
+                    
+                    <div class="summary-section">
+                        <h3>📋 Recommended Actions</h3>
+                        <ul>
+                            <li>Check server logs for detailed error information</li>
+                            <li>Verify environment variables are properly configured</li>
+                            <li>Test authentication tokens for expiration</li>
+                            <li>Check API connectivity to BuildingConnected and Microsoft Graph</li>
+                            <li>Contact the development team if the issue persists</li>
+                        </ul>
+                    </div>
+                    
+                    <div class="summary-section">
+                        <h3>🔧 System Information</h3>
+                        <p><strong>Error occurred:</strong> {datetime.now().strftime('%A, %B %d, %Y at %I:%M %p')}</p>
+                        <p><strong>Mode:</strong> Health Check</p>
+                        <p><strong>Environment:</strong> {os.getenv("ENVIRONMENT", "production")}</p>
+                    </div>
+                    
+                    <div class="footer">
+                        <p><em>This error notification was automatically sent by the Bid Reminder Agent.</em></p>
+                        <p><small>Please investigate and resolve the issue as soon as possible.</small></p>
+                    </div>
+                </div>
+            </div>
+        </body>
+        </html>
+        """
+        
+        return html_template
+    
+    async def send_health_error_email(self, error_message: str, error_stage: str = "Unknown") -> bool:
+        """Send health error email to administrators"""
+        try:
+            # Create token manager and client for error email
+            outlook_token_manager = create_token_manager_from_env()
+            outlook_client = MSGraphClient(outlook_token_manager)
+            
+            error_subject = "🚨 Bid Reminder System Health Check - FAILED"
+            error_body = self._create_health_error_email(error_message, error_stage)
+            
+            emails_sent = 0
+            for recipient in self.health_recipients:
+                try:
+                    logger.info(f"Sending health error email to {recipient}")
+                    send_response = await outlook_client.send_email(
+                        to=recipient,
+                        subject=error_subject,
+                        body=error_body,
+                        importance=EmailImportance.HIGH
+                    )
+                    
+                    if send_response.success:
+                        emails_sent += 1
+                        logger.info(f"✅ Health error email sent successfully to {recipient}")
+                    else:
+                        logger.error(f"❌ Failed to send health error email to {recipient}: {send_response.error}")
+                        
+                except Exception as email_error:
+                    logger.error(f"❌ Failed to send health error email to {recipient}: {str(email_error)}")
+            
+            return emails_sent > 0
+            
+        except Exception as e:
+            logger.error(f"❌ Failed to send health error emails: {str(e)}")
+            return False
+    
     def should_continue_after_auth(self, state: BidReminderState) -> str:
         """Continue to check projects or end on auth error"""
         if state.get("error_message"):
@@ -763,12 +1080,23 @@ class BidReminderAgent:
         return result
 
 
-# Convenience function
-async def run_bid_reminder() -> dict:
+# Convenience functions
+async def run_bid_reminder(is_health: bool = False) -> dict:
     """Simple function to run bid reminder workflow"""
-    logger.info("📞 Called run_bid_reminder() convenience function")
-    agent = BidReminderAgent()
+    logger.info(f"📞 Called run_bid_reminder() convenience function (Health Mode: {is_health})")
+    agent = BidReminderAgent(is_health=is_health)
     return await agent.run_bid_reminder_workflow()
+
+
+async def send_health_error_notification(error_message: str, error_stage: str = "Health Check") -> bool:
+    """Send health error notification to administrators"""
+    logger.info(f"📧 Sending health error notification: {error_stage}")
+    try:
+        agent = BidReminderAgent(is_health=True)
+        return await agent.send_health_error_email(error_message, error_stage)
+    except Exception as e:
+        logger.error(f"❌ Failed to send health error notification: {str(e)}")
+        return False
 
 
 if __name__ == "__main__":
@@ -783,7 +1111,7 @@ if __name__ == "__main__":
         print("This will check BuildingConnected for projects due in 5-10 days")
         print("and send personalized invitation emails to each bidder.\n")
         
-        result = await run_bid_reminder()
+        result = await run_bid_reminder(is_health=False)
         
         logger.info("="*50)
         logger.info("📋 FINAL RESULTS")

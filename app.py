@@ -25,7 +25,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from pydantic import BaseModel, Field
 from dotenv import load_dotenv
 
-from bid_reminder_agent import run_bid_reminder
+from bid_reminder_agent import run_bid_reminder, send_health_error_notification
 
 # Import test suite components
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
@@ -108,9 +108,9 @@ async def lifespan(app: FastAPI):
     # Startup
     logger.info("🚀 Starting Bid Reminder Agent API...")
     
-    # Check environment configuration
-    outlook_vars = ['MS_CLIENT_ID', 'MS_CLIENT_SECRET', 'ENCRYPTED_REFRESH_TOKEN', 'ENCRYPTION_KEY']
-    building_vars = ['AUTODESK_CLIENT_ID', 'AUTODESK_CLIENT_SECRET', 'AUTODESK_ENCRYPTED_REFRESH_TOKEN', 'AUTODESK_ENCRYPTION_KEY']
+    # Check environment configuration (only client credentials)
+    outlook_vars = ['MS_CLIENT_ID', 'MS_CLIENT_SECRET', 'ENCRYPTION_KEY']
+    building_vars = ['AUTODESK_CLIENT_ID', 'AUTODESK_CLIENT_SECRET', 'AUTODESK_ENCRYPTION_KEY']
     
     missing_outlook = [var for var in outlook_vars if not os.getenv(var)]
     missing_building = [var for var in building_vars if not os.getenv(var)]
@@ -612,6 +612,7 @@ async def health_check():
     4. Proactively refreshes BuildingConnected tokens for next run
     5. Returns health status with test summary
     """
+    
     outlook_vars = ['MS_CLIENT_ID', 'MS_CLIENT_SECRET', 'ENCRYPTED_REFRESH_TOKEN', 'ENCRYPTION_KEY']
     building_vars = ['AUTODESK_CLIENT_ID', 'AUTODESK_CLIENT_SECRET', 'AUTODESK_ENCRYPTED_REFRESH_TOKEN', 'AUTODESK_ENCRYPTION_KEY']
     
@@ -682,7 +683,7 @@ async def run_bid_reminder_workflow():
     """
     try:
         # Run the bid reminder workflow
-        result = await run_bid_reminder()
+        result = await run_bid_reminder(is_health=False)
         
         # Extract project count
         upcoming_projects = result.get("upcoming_projects", [])

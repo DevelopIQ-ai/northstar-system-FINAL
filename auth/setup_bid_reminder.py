@@ -8,52 +8,78 @@ import os
 import sys
 from dotenv import load_dotenv, set_key
 
+# Import the new JSON token storage
+import sys
+import os
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from auth.token_storage import TokenStorage
+
 load_dotenv()
+
+# Initialize token storage
+token_storage = TokenStorage()
 
 def check_environment_variables():
     """Check which environment variables are configured"""
     print("🔍 Checking current configuration...\n")
     
-    # Outlook variables
-    outlook_vars = {
+    # Check JSON token storage first
+    print("📁 JSON Token Storage:")
+    
+    # Check Microsoft token
+    microsoft_token_info = token_storage.get_token_info('microsoft')
+    if microsoft_token_info.get('exists', False):
+        print(f"  ✅ Microsoft Token: configured (updated: {microsoft_token_info.get('last_updated', 'unknown')})")
+        microsoft_token_configured = True
+    else:
+        print(f"  ❌ Microsoft Token: NOT CONFIGURED in JSON storage")
+        microsoft_token_configured = False
+    
+    # Check Autodesk token
+    autodesk_token_info = token_storage.get_token_info('autodesk')
+    if autodesk_token_info.get('exists', False):
+        print(f"  ✅ Autodesk Token: configured (updated: {autodesk_token_info.get('last_updated', 'unknown')})")
+        autodesk_token_configured = True
+    else:
+        print(f"  ❌ Autodesk Token: NOT CONFIGURED in JSON storage")
+        autodesk_token_configured = False
+    
+    # Check .env credentials
+    outlook_credentials = {
         'MS_CLIENT_ID': 'Microsoft Client ID',
         'MS_CLIENT_SECRET': 'Microsoft Client Secret',
-        'ENCRYPTED_REFRESH_TOKEN': 'Encrypted Refresh Token (Outlook)',
         'ENCRYPTION_KEY': 'Encryption Key (Outlook)'
     }
     
-    # BuildingConnected variables
-    building_vars = {
+    building_credentials = {
         'AUTODESK_CLIENT_ID': 'Autodesk Client ID',
         'AUTODESK_CLIENT_SECRET': 'Autodesk Client Secret',
-        'AUTODESK_ENCRYPTED_REFRESH_TOKEN': 'Encrypted Refresh Token (BuildingConnected)',
         'AUTODESK_ENCRYPTION_KEY': 'Encryption Key (BuildingConnected)'
     }
     
-    # Email recipient
     email_vars = {
         'DEFAULT_EMAIL_RECIPIENT': 'Default Email Recipient'
     }
     
-    print("📧 Outlook Configuration:")
-    outlook_configured = True
-    for var, description in outlook_vars.items():
+    print("\n📧 Outlook Credentials (.env):")
+    outlook_credentials_configured = True
+    for var, description in outlook_credentials.items():
         value = os.getenv(var)
         if value:
             print(f"  ✅ {description}: {'*' * 20} (configured)")
         else:
             print(f"  ❌ {description}: NOT CONFIGURED")
-            outlook_configured = False
+            outlook_credentials_configured = False
     
-    print("\n🏗️ BuildingConnected Configuration:")
-    building_configured = True
-    for var, description in building_vars.items():
+    print("\n🏗️ BuildingConnected Credentials (.env):")
+    building_credentials_configured = True
+    for var, description in building_credentials.items():
         value = os.getenv(var)
         if value:
             print(f"  ✅ {description}: {'*' * 20} (configured)")
         else:
             print(f"  ❌ {description}: NOT CONFIGURED")
-            building_configured = False
+            building_credentials_configured = False
     
     print("\n📨 Email Configuration:")
     for var, description in email_vars.items():
@@ -63,9 +89,13 @@ def check_environment_variables():
         else:
             print(f"  ❌ {description}: NOT CONFIGURED")
     
+    # Determine overall readiness
+    outlook_configured = outlook_credentials_configured and microsoft_token_configured
+    building_configured = building_credentials_configured and autodesk_token_configured
+    
     print(f"\n📊 Summary:")
-    print(f"  Outlook Ready: {'✅' if outlook_configured else '❌'}")
-    print(f"  BuildingConnected Ready: {'✅' if building_configured else '❌'}")
+    print(f"  Outlook Ready: {'✅' if outlook_configured else '❌'} (credentials: {'✅' if outlook_credentials_configured else '❌'}, token: {'✅' if microsoft_token_configured else '❌'})")
+    print(f"  BuildingConnected Ready: {'✅' if building_configured else '❌'} (credentials: {'✅' if building_credentials_configured else '❌'}, token: {'✅' if autodesk_token_configured else '❌'})")
     
     return outlook_configured, building_configured
 
@@ -98,9 +128,14 @@ def setup_outlook_auth():
     encrypted_token = os.getenv('ENCRYPTED_REFRESH_TOKEN')
     encryption_key = os.getenv('ENCRYPTION_KEY')
     
+    # Check JSON storage for tokens
+    microsoft_token_info = token_storage.get_token_info('microsoft')
+    has_json_token = microsoft_token_info.get('exists', False)
+    
     # If we have credentials but no tokens, run OAuth flow
-    if client_id and client_secret and not (encrypted_token and encryption_key):
+    if client_id and client_secret and not has_json_token:
         print("✅ Found Microsoft credentials in .env file")
+        print("❌ No Microsoft token found in JSON storage")
         print("🔄 Running OAuth flow to get refresh token...")
         print("🌐 Check your browser, or click on the link that will be displayed")
         
@@ -148,8 +183,9 @@ asyncio.run(main())
         return False
     
     # If everything is already configured
-    if client_id and client_secret and encrypted_token and encryption_key:
+    if client_id and client_secret and has_json_token:
         print("✅ Microsoft authentication already configured!")
+        print(f"📅 Token last updated: {microsoft_token_info.get('last_updated', 'unknown')}")
         return True
     
     print("❌ Unexpected configuration state")
@@ -166,9 +202,14 @@ def setup_buildingconnected_auth():
     encrypted_token = os.getenv('AUTODESK_ENCRYPTED_REFRESH_TOKEN')
     encryption_key = os.getenv('AUTODESK_ENCRYPTION_KEY')
     
+    # Check JSON storage for tokens
+    autodesk_token_info = token_storage.get_token_info('autodesk')
+    has_json_token = autodesk_token_info.get('exists', False)
+    
     # If we have credentials but no tokens, run OAuth flow
-    if client_id and client_secret and not (encrypted_token and encryption_key):
+    if client_id and client_secret and not has_json_token:
         print("✅ Found Autodesk credentials in .env file")
+        print("❌ No Autodesk token found in JSON storage")
         print("🔄 Running OAuth flow to get refresh token...")
         print("🌐 Check your browser, or click on the link that will be displayed")
         
@@ -215,8 +256,9 @@ asyncio.run(main())
         return False
     
     # If everything is already configured
-    if client_id and client_secret and encrypted_token and encryption_key:
+    if client_id and client_secret and has_json_token:
         print("✅ BuildingConnected authentication already configured!")
+        print(f"📅 Token last updated: {autodesk_token_info.get('last_updated', 'unknown')}")
         return True
     
     print("❌ Unexpected configuration state")
