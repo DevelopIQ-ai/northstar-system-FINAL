@@ -34,7 +34,6 @@ if sentry_dsn:
         dsn=sentry_dsn,
         integrations=[
             FastApiIntegration(
-                auto_session_tracking=True,
                 failed_request_status_codes=[400, range(500, 600)]
             ),
             StarletteIntegration(
