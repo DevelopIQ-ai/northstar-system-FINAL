@@ -46,6 +46,7 @@ class TokenManager:
         self.token_url = token_url
         self.scope = scope
         self._cached_token: Optional[TokenData] = None
+        self._refresh_lock = asyncio.Semaphore(1)  # Prevent concurrent refreshes
     
     async def decrypt_refresh_token(self) -> str:
         """Decrypt the stored refresh token using AES-CBC"""
@@ -84,44 +85,75 @@ class TokenManager:
             datetime.now(timezone.utc).timestamp() * 1000 < self._cached_token.expires_at - 60_000):
             return self._cached_token.access_token
         
-        # Refresh token
-        refresh_token = await self.decrypt_refresh_token()
-        
-        token_data = {
-            'client_id': self.client_id,
-            'client_secret': self.client_secret, 
-            'grant_type': 'refresh_token',
-            'refresh_token': refresh_token,
-            'scope': self.scope
-        }
-        
-        async with httpx.AsyncClient() as client:
-            response = await client.post(
-                self.token_url,
-                data=token_data,
-                headers={'Content-Type': 'application/x-www-form-urlencoded'}
-            )
+        # Use semaphore to prevent concurrent refresh attempts
+        async with self._refresh_lock:
+            # Double-check in case another coroutine refreshed while we waited
+            if (self._cached_token and 
+                datetime.now(timezone.utc).timestamp() * 1000 < self._cached_token.expires_at - 60_000):
+                return self._cached_token.access_token
             
-            if response.status_code != 200:
-                raise ValueError(f"Token refresh failed: {response.status_code} - {response.text}")
+            # Refresh token
+            refresh_token = await self.decrypt_refresh_token()
             
-            token_response = response.json()
+            token_data = {
+                'client_id': self.client_id,
+                'client_secret': self.client_secret, 
+                'grant_type': 'refresh_token',
+                'refresh_token': refresh_token,
+                'scope': self.scope
+            }
             
-            # Cache the new token
-            expires_in = token_response.get('expires_in', 3600)  # Default 1 hour
-            expires_at = int(datetime.now(timezone.utc).timestamp() * 1000) + (expires_in * 1000)
-            
-            self._cached_token = TokenData(
-                access_token=token_response['access_token'],
-                expires_at=expires_at,
-                refresh_token=token_response.get('refresh_token')  # May update
-            )
-            
-            # Update stored refresh token if a new one was provided (Autodesk rotates refresh tokens)
-            if self._cached_token.refresh_token and self._cached_token.refresh_token != refresh_token:
-                await self._update_stored_refresh_token(self._cached_token.refresh_token)
-            
-            return self._cached_token.access_token
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                response = await client.post(
+                    self.token_url,
+                    data=token_data,
+                    headers={'Content-Type': 'application/x-www-form-urlencoded'}
+                )
+                
+                if response.status_code != 200:
+                    error_details = f"Token refresh failed: {response.status_code} - {response.text}"
+                    
+                    # For BuildingConnected, provide more specific error guidance
+                    if isinstance(self, BuildingConnectedTokenManager) and "invalid_grant" in response.text:
+                        error_details += "\n\nBuildingConnected refresh token has expired or been invalidated."
+                        error_details += "\nThis commonly happens because:"
+                        error_details += "\n1. Refresh token expired (14-day limit)"
+                        error_details += "\n2. Multiple concurrent refresh attempts"
+                        error_details += "\n3. User re-authenticated in another app"
+                        error_details += "\n\nTo fix: Run 'python -c \"import asyncio; from auth.oauth_setup import setup_autodesk_auth_flow; asyncio.run(setup_autodesk_auth_flow())\"'"
+                    
+                    raise ValueError(error_details)
+                
+                token_response = response.json()
+                
+                # Cache the new token
+                expires_in = token_response.get('expires_in', 3600)  # Default 1 hour
+                expires_at = int(datetime.now(timezone.utc).timestamp() * 1000) + (expires_in * 1000)
+                
+                self._cached_token = TokenData(
+                    access_token=token_response['access_token'],
+                    expires_at=expires_at,
+                    refresh_token=token_response.get('refresh_token')  # May update
+                )
+                
+                # Debug logging for token refresh
+                print(f"🔑 Token refresh successful for {self.__class__.__name__}")
+                print(f"   Access token: {self._cached_token.access_token[:20]}...")
+                print(f"   Expires at: {datetime.fromtimestamp(expires_at/1000)}")
+                if self._cached_token.refresh_token:
+                    print(f"   New refresh token provided: {self._cached_token.refresh_token[:20]}...")
+                    print(f"   Old refresh token was: {refresh_token[:20]}...")
+                else:
+                    print("   No new refresh token provided")
+                
+                # Update stored refresh token if a new one was provided (Autodesk rotates refresh tokens)
+                if self._cached_token.refresh_token and self._cached_token.refresh_token != refresh_token:
+                    print("🔄 New refresh token detected - updating stored token")
+                    await self._update_stored_refresh_token(self._cached_token.refresh_token)
+                else:
+                    print("📝 No token rotation needed (same refresh token)")
+                
+                return self._cached_token.access_token
     
     async def _update_stored_refresh_token(self, new_refresh_token: str) -> None:
         """Update the stored refresh token with new encrypted value"""
@@ -138,14 +170,29 @@ class TokenManager:
             else:
                 env_var = 'ENCRYPTED_REFRESH_TOKEN'
             
+            # Log the token rotation for debugging
+            print(f"🔄 Token rotation: Updating {env_var} in .env file AND runtime environment")
+            print(f"   Old token: {self.encrypted_refresh_token[:20]}...")
+            print(f"   New token: {encrypted_token[:20]}...")
+            
+            # Update .env file for persistence
             set_key('.env', env_var, encrypted_token)
+            
+            # CRITICAL: Also update the current process environment variables
+            # This ensures subsequent requests in the same server process use the new token
+            os.environ[env_var] = encrypted_token
+            print(f"   ✅ Updated both .env file and runtime environment for {env_var}")
             
             # Update instance variable
             self.encrypted_refresh_token = encrypted_token
             
+            print(f"✅ Token rotation completed for {env_var}")
+            
         except Exception as e:
             # Log the error but don't fail the token refresh
-            print(f"Warning: Failed to update stored refresh token: {str(e)}")
+            print(f"❌ Warning: Failed to update stored refresh token: {str(e)}")
+            import traceback
+            traceback.print_exc()
     
     def _encrypt_token(self, token: str) -> str:
         """Encrypt a token using AES-CBC (same logic as oauth_setup.py)"""

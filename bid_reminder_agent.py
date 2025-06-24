@@ -470,6 +470,63 @@ class BidReminderAgent:
             "workflow_successful": workflow_successful
         }
     
+    @traceable(name="🔄 Prepare Next Run", tags=["token-refresh", "proactive"])
+    async def prepare_next_run_node(self, state: BidReminderState) -> BidReminderState:
+        """Proactively refresh BuildingConnected token for next run"""
+        logger.info("🔄 Starting proactive token refresh for next run")
+        
+        # Always attempt token refresh, regardless of workflow success
+        # This is critical for Autodesk's use-once refresh token policy
+        
+        building_token_manager = state.get("building_token_manager")
+        
+        # If we don't have a token manager (due to auth failure), try to create one
+        if not building_token_manager:
+            logger.info("🔧 No BuildingConnected token manager in state, attempting to create fresh one")
+            try:
+                from auth.auth_helpers import BuildingConnectedTokenManager
+                building_token_manager = BuildingConnectedTokenManager(
+                    client_id=os.getenv("AUTODESK_CLIENT_ID"),
+                    client_secret=os.getenv("AUTODESK_CLIENT_SECRET"),
+                    encrypted_refresh_token=os.getenv("AUTODESK_ENCRYPTED_REFRESH_TOKEN")
+                )
+                logger.info("✅ Fresh BuildingConnected token manager created for proactive refresh")
+            except Exception as e:
+                logger.warning(f"⚠️ Could not create fresh token manager: {str(e)}")
+                return state
+        
+        try:
+            logger.info("🔑 Proactively refreshing BuildingConnected token for next run")
+            logger.info("   This is critical due to Autodesk's use-once refresh token policy")
+            
+            # Force a token refresh by clearing the cached token
+            building_token_manager._cached_token = None
+            
+            # Get a fresh access token (this will refresh and rotate the refresh token)
+            fresh_token = await building_token_manager.get_access_token()
+            
+            if fresh_token and len(fresh_token) > 50:
+                logger.info("✅ Proactive token refresh successful - next run will have fresh tokens")
+                logger.info(f"   New token expires at: {datetime.fromtimestamp(building_token_manager._cached_token.expires_at/1000) if building_token_manager._cached_token else 'Unknown'}")
+                logger.info("   📝 New refresh token should be saved to .env file automatically")
+            else:
+                logger.warning("⚠️ Proactive token refresh returned invalid token")
+                
+        except Exception as e:
+            # Don't fail the workflow if proactive refresh fails, but log details
+            logger.warning(f"⚠️ Proactive token refresh failed: {str(e)}")
+            
+            # If this is an invalid_grant error, provide guidance
+            if "invalid_grant" in str(e).lower():
+                logger.warning("   This suggests the refresh token is already expired")
+                logger.warning("   🔧 Solution: Run fresh OAuth flow with:")
+                logger.warning("   python -c \"import asyncio; from auth.oauth_setup import setup_autodesk_auth_flow; asyncio.run(setup_autodesk_auth_flow())\"")
+            else:
+                logger.info("   Next run may need to handle token refresh")
+        
+        logger.info("🔄 Prepare next run node completed")
+        return state
+    
     def _create_personalized_invitation_email(self, invitation: BiddingInvitationData, project: Optional[Project]) -> str:
         """Create personalized HTML email for bidding invitation with LinkToBid button"""
         
@@ -603,6 +660,8 @@ class BidReminderAgent:
         logger.info("  - send_reminder_email")
         graph.add_node("finalize_result", self.finalize_result_node)
         logger.info("  - finalize_result")
+        graph.add_node("prepare_next_run", self.prepare_next_run_node)
+        logger.info("  - prepare_next_run")
         
         # Add edges (complete flow with email sending)
         logger.info("Adding workflow edges:")
@@ -643,8 +702,10 @@ class BidReminderAgent:
             }
         )
         logger.info("  - send_reminder_email → finalize_result")
-        graph.add_edge("finalize_result", END)
-        logger.info("  - finalize_result → END")
+        graph.add_edge("finalize_result", "prepare_next_run")
+        logger.info("  - finalize_result → prepare_next_run")
+        graph.add_edge("prepare_next_run", END)
+        logger.info("  - prepare_next_run → END")
         
         logger.info("✅ Workflow graph compiled successfully")
         return graph.compile()

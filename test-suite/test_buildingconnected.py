@@ -738,6 +738,7 @@ class BuildingConnectedTestSuite:
                     mock_response.is_success = True
                     mock_response.text = '{"results": []}'
                     mock_response.json.return_value = {"results": []}
+                    mock_response.reason_phrase = "OK"
                     return mock_response
             
             with patch('httpx.AsyncClient') as mock_client:
@@ -753,8 +754,17 @@ class BuildingConnectedTestSuite:
                         success_count += 1
                     except httpx.NetworkError:
                         failure_count += 1
-                    except Exception:
-                        pass
+                    except BuildingConnectedError as e:
+                        # Network errors get wrapped in BuildingConnectedError
+                        if ("network" in str(e).lower() or 
+                            "unreachable" in str(e).lower() or
+                            "unexpected error" in str(e).lower()):
+                            failure_count += 1
+                        else:
+                            pass
+                    except Exception as e:
+                        # All other exceptions (including wrapped network errors) count as failures
+                        failure_count += 1
                 
                 if success_count > 0 and failure_count > 0:
                     self._record_test_result(test_name, True, f"✅ Handled intermittent connectivity ({success_count} success, {failure_count} failures)", start_time)
@@ -888,7 +898,17 @@ class BuildingConnectedTestSuite:
                     mock_response.status_code = 200
                     mock_response.is_success = True
                     infinite_response = {
-                        "results": [{"id": "item", "name": "Item"}],
+                        "results": [{
+                            "id": "item", 
+                            "name": "Test Item",
+                            "projectId": "test_project",
+                            "bidPackageId": "test_bid_package",
+                            "invitees": [{
+                                "state": "invited",
+                                "userId": "test_user",
+                                "email": "test@example.com"
+                            }]
+                        }],
                         "pagination": {"nextUrl": "/same-url-always"}  # Same URL always
                     }
                     mock_response.text = json.dumps(infinite_response)
@@ -1621,6 +1641,25 @@ class BuildingConnectedTestSuite:
         if not passed and severity in ["high", "critical"]:
             logger.error(f"      ⚠️  {severity.upper()} SEVERITY: {message}")
     
+    def _get_test_category(self, test_name: str) -> str:
+        """Get test category for easier debugging"""
+        if any(x in test_name for x in ["http_status", "empty_responses", "large_responses", "rate_limiting", "timeout"]):
+            return "API Client Functionality"
+        elif any(x in test_name for x in ["invalid_project", "malformed_dates", "missing_fields", "invalid_data", "boundary_values"]):
+            return "Data Validation"
+        elif any(x in test_name for x in ["connection_timeout", "dns_failure", "ssl_errors", "intermittent"]):
+            return "Network Resilience" 
+        elif any(x in test_name for x in ["missing_next_url", "infinite_pagination", "malformed_pagination", "empty_paginated"]):
+            return "Pagination Handling"
+        elif any(x in test_name for x in ["node_failure", "state_corruption", "email_integration", "concurrent_access"]):
+            return "Workflow Integration"
+        elif any(x in test_name for x in ["empty_project", "large_datasets", "special_characters", "timezone"]):
+            return "Edge Cases"
+        elif any(x in test_name for x in ["memory_usage", "response_times", "resource_cleanup"]):
+            return "Performance Scenarios"
+        else:
+            return "Other"
+    
     def _generate_report(self) -> TestSuiteReport:
         """Generate comprehensive test suite report"""
         end_time = datetime.now()
@@ -1665,6 +1704,23 @@ class BuildingConnectedTestSuite:
         logger.info(f"Failed: {report.failed_tests}")
         logger.info(f"Critical Failures: {report.critical_failures}")
         logger.info(f"Execution Time: {execution_time/1000:.2f}s")
+        
+        # Log detailed failure summary
+        failed_results = [r for r in self.test_results if not r.passed]
+        if failed_results:
+            logger.info("\n" + "="*80)
+            logger.info("🚨 DETAILED FAILURE SUMMARY")
+            logger.info("="*80)
+            for i, failure in enumerate(failed_results, 1):
+                logger.info(f"\n❌ FAILURE #{i}: {failure.test_name}")
+                logger.info(f"   Suite: BuildingConnected Test Suite")
+                logger.info(f"   Category: {self._get_test_category(failure.test_name)}")
+                logger.info(f"   Severity: {failure.severity.upper()}")
+                logger.info(f"   Message: {failure.message}")
+                logger.info(f"   Execution Time: {failure.execution_time_ms}ms")
+                if failure.error_details:
+                    logger.info(f"   Error Details: {failure.error_details}")
+                logger.info("   " + "-"*60)
         
         if recommendations:
             logger.info("\n📋 RECOMMENDATIONS:")

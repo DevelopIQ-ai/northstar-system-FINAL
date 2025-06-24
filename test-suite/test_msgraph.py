@@ -1559,6 +1559,27 @@ class MSGraphTestSuite:
         if not passed and severity in ["high", "critical"]:
             logger.error(f"      ⚠️  {severity.upper()} SEVERITY: {message}")
     
+    def _get_test_category(self, test_name: str) -> str:
+        """Get test category for easier debugging"""
+        if any(x in test_name for x in ["http_status", "empty_responses", "rate_limiting", "timeout", "request_methods"]):
+            return "API Client Functionality"
+        elif any(x in test_name for x in ["email_sending", "multiple_recipients", "content_types", "importance", "large_email"]):
+            return "Email Sending Scenarios"
+        elif any(x in test_name for x in ["invalid_email", "missing_required", "special_characters", "validation"]):
+            return "Data Validation"
+        elif any(x in test_name for x in ["connection_timeout", "dns_failure", "ssl_errors", "intermittent"]):
+            return "Network Resilience"
+        elif any(x in test_name for x in ["expired_token", "invalid_token", "token_refresh"]):
+            return "Authentication Scenarios"
+        elif any(x in test_name for x in ["list_emails", "email_search", "read_email", "invalid_email_ids"]):
+            return "Email Operations"
+        elif any(x in test_name for x in ["concurrent", "unicode", "malformed", "api_version"]):
+            return "Edge Cases"
+        elif any(x in test_name for x in ["response_times", "memory_usage", "resource_cleanup"]):
+            return "Performance Scenarios"
+        else:
+            return "Other"
+    
     def _generate_report(self) -> TestSuiteReport:
         """Generate comprehensive test suite report"""
         end_time = datetime.now()
@@ -1603,6 +1624,23 @@ class MSGraphTestSuite:
         logger.info(f"Failed: {report.failed_tests}")
         logger.info(f"Critical Failures: {report.critical_failures}")
         logger.info(f"Execution Time: {execution_time/1000:.2f}s")
+        
+        # Log detailed failure summary
+        failed_results = [r for r in self.test_results if not r.passed]
+        if failed_results:
+            logger.info("\n" + "="*80)
+            logger.info("🚨 DETAILED FAILURE SUMMARY")
+            logger.info("="*80)
+            for i, failure in enumerate(failed_results, 1):
+                logger.info(f"\n❌ FAILURE #{i}: {failure.test_name}")
+                logger.info(f"   Suite: MSGraph Test Suite")
+                logger.info(f"   Category: {self._get_test_category(failure.test_name)}")
+                logger.info(f"   Severity: {failure.severity.upper()}")
+                logger.info(f"   Message: {failure.message}")
+                logger.info(f"   Execution Time: {failure.execution_time_ms}ms")
+                if failure.error_details:
+                    logger.info(f"   Error Details: {failure.error_details}")
+                logger.info("   " + "-"*60)
         
         if recommendations:
             logger.info("\n📋 RECOMMENDATIONS:")

@@ -76,7 +76,7 @@ class BidPackage(BaseModel):
     """Bid package model"""
     id: str
     name: str
-    projectId: str
+    projectId: Optional[str] = None
 
 
 class Invitee(BaseModel):
@@ -105,13 +105,13 @@ class PaginationInfo(BaseModel):
 class BidPackageApiResponse(BaseModel):
     """Bid package API response"""
     results: List[BidPackage]
-    pagination: PaginationInfo
+    pagination: Optional[PaginationInfo] = None
 
 
 class InviteApiResponse(BaseModel):
     """Invite API response"""
     results: List[Invite]
-    pagination: PaginationInfo
+    pagination: Optional[PaginationInfo] = None
 
 
 class BuildingConnectedError(Exception):
@@ -482,7 +482,7 @@ class BuildingConnectedClient:
                     all_bid_packages.extend(bid_package_response.results)
                     
                     # Handle pagination
-                    if bid_package_response.pagination.nextUrl:
+                    if bid_package_response.pagination and bid_package_response.pagination.nextUrl:
                         raw_next_url = bid_package_response.pagination.nextUrl
                         if raw_next_url.startswith('/'):
                             next_bid_package_url = raw_next_url[1:]  # Remove leading slash for our _make_request method
@@ -578,7 +578,7 @@ class BuildingConnectedClient:
                             logger.debug(f"  No invites found in this page")
                         
                         # Handle pagination
-                        if invite_response.pagination.nextUrl:
+                        if invite_response.pagination and invite_response.pagination.nextUrl:
                             raw_next_url = invite_response.pagination.nextUrl
                             if raw_next_url.startswith('/'):
                                 next_invite_url = raw_next_url[1:]  # Remove leading slash for our _make_request method

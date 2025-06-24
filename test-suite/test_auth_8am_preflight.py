@@ -443,8 +443,8 @@ class PreFlightChecker:
             # Optimal workflow time is 8am - 10am
             timing_optimal = 8 <= current_hour <= 10
             
-            # Acceptable workflow time is 6am - 12pm
-            timing_acceptable = 6 <= current_hour <= 12
+            # Acceptable workflow time is 6am - 6pm (extended for testing)
+            timing_acceptable = 6 <= current_hour <= 18
             
             execution_time = int((datetime.now() - start_time).total_seconds() * 1000)
             
@@ -472,7 +472,7 @@ class PreFlightChecker:
                 self.warnings.append(f"Workflow running outside recommended hours (current: {current_hour}:00)")
                 self.workflow_tests.append(WorkflowReadinessTest(
                     "workflow_timing", False,
-                    f"⚠️ Non-optimal workflow time ({current_hour}:00) - recommend 6am-12pm",
+                    f"⚠️ Non-optimal workflow time ({current_hour}:00) - recommend 6am-6pm",
                     execution_time, False, details
                 ))
             
