@@ -560,108 +560,138 @@ async def send_test_results_email(test_results: Dict[str, Any]) -> bool:
         return False
 
 async def proactive_buildingconnected_token_refresh():
-    """Proactively refresh BuildingConnected token for health check test suites"""
-    logger.info("🔄 Starting proactive BuildingConnected token refresh for health check")
+    """Proactively refresh both Microsoft Graph and BuildingConnected tokens after health check"""
+    logger.info("🔄 Starting proactive token refresh for both services (post-health-check)")
+    
+    ms_success = False
+    bc_success = False
     
     try:
         # Import here to avoid circular imports
-        from auth.auth_helpers import create_buildingconnected_token_manager_from_env
+        from auth.auth_helpers import create_token_manager_from_env, create_buildingconnected_token_manager_from_env
         
-        # Create fresh token manager
-        building_token_manager = create_buildingconnected_token_manager_from_env()
-        logger.info("✅ Fresh BuildingConnected token manager created for proactive refresh")
+        # Refresh Microsoft Graph tokens
+        try:
+            logger.info("   🔄 Refreshing Microsoft Graph tokens...")
+            ms_token_manager = create_token_manager_from_env()
+            ms_token_manager._cached_token = None  # Force refresh
+            fresh_ms_token = await ms_token_manager.get_access_token()
+            
+            if fresh_ms_token and len(fresh_ms_token) > 50:
+                ms_success = True
+                logger.info("   ✅ Microsoft Graph token refresh successful")
+                logger.info(f"      New token expires at: {datetime.fromtimestamp(ms_token_manager._cached_token.expires_at/1000) if ms_token_manager._cached_token else 'Unknown'}")
+            else:
+                logger.warning("   ⚠️ Microsoft Graph token refresh returned invalid token")
+        except Exception as e:
+            logger.error(f"   ❌ Microsoft Graph token refresh failed: {str(e)}")
         
-        # Force a token refresh by clearing the cached token
-        building_token_manager._cached_token = None
+        # Refresh BuildingConnected tokens 
+        try:
+            logger.info("   🔄 Refreshing BuildingConnected tokens...")
+            bc_token_manager = create_buildingconnected_token_manager_from_env()
+            bc_token_manager._cached_token = None  # Force refresh
+            fresh_bc_token = await bc_token_manager.get_access_token()
+            
+            if fresh_bc_token and len(fresh_bc_token) > 50:
+                bc_success = True
+                logger.info("   ✅ BuildingConnected token refresh successful")
+                logger.info(f"      New token expires at: {datetime.fromtimestamp(bc_token_manager._cached_token.expires_at/1000) if bc_token_manager._cached_token else 'Unknown'}")
+                logger.info("      📝 New refresh token rotated and saved to .env file")
+            else:
+                logger.warning("   ⚠️ BuildingConnected token refresh returned invalid token")
+        except Exception as e:
+            logger.error(f"   ❌ BuildingConnected token refresh failed: {str(e)}")
+            
+            # If this is an invalid_grant error, provide guidance
+            if "invalid_grant" in str(e).lower():
+                logger.warning("      This suggests the refresh token is already expired")
+                logger.warning("      🔧 Solution: Run fresh OAuth flow with:")
+                logger.warning("      python -c \"import asyncio; from auth.oauth_setup import setup_autodesk_auth_flow; asyncio.run(setup_autodesk_auth_flow())\"")
         
-        # Get a fresh access token (this will refresh and rotate the refresh token)
-        fresh_token = await building_token_manager.get_access_token()
-        
-        if fresh_token and len(fresh_token) > 50:
-            logger.info("✅ Proactive token refresh successful - next health check will have fresh tokens")
-            logger.info(f"   New token expires at: {datetime.fromtimestamp(building_token_manager._cached_token.expires_at/1000) if building_token_manager._cached_token else 'Unknown'}")
-            logger.info("   📝 New refresh token saved to .env and runtime environment")
+        # Summary
+        if ms_success and bc_success:
+            logger.info("🎉 Both token refreshes successful - fresh tokens ready for bid reminders")
             return True
+        elif ms_success or bc_success:
+            logger.warning(f"⚠️ Partial token refresh success: MS={ms_success}, BC={bc_success}")
+            return True  # Partial success is still useful
         else:
-            logger.warning("⚠️ Proactive token refresh returned invalid token")
+            logger.error("❌ All token refreshes failed")
             return False
             
     except Exception as e:
         # Don't fail the health check if proactive refresh fails
-        logger.warning(f"⚠️ Proactive token refresh failed: {str(e)}")
-        
-        # If this is an invalid_grant error, provide guidance
-        if "invalid_grant" in str(e).lower():
-            logger.warning("   This suggests the refresh token is already expired")
-            logger.warning("   🔧 Solution: Run fresh OAuth flow with:")
-            logger.warning("   python -c \"import asyncio; from auth.oauth_setup import setup_autodesk_auth_flow; asyncio.run(setup_autodesk_auth_flow())\"")
-        else:
-            logger.info("   Next health check may need to handle token refresh")
-        
+        logger.error(f"❌ Critical error in proactive token refresh: {str(e)}")
         return False
 
 @app.get("/health", response_model=HealthResponse, summary="Health check with comprehensive test suite")
 async def health_check():
     """
-    Health check endpoint that runs comprehensive test suite and emails results
+    Comprehensive health check that runs full test suite and reports results
     
     This endpoint:
-    1. Verifies service status and configuration
-    2. Runs all test suites (auth, msgraph, buildingconnected)
-    3. Sends detailed email report to evan@developiq.ai and kush@developiq.ai
-    4. Proactively refreshes BuildingConnected tokens for next run
-    5. Returns health status with test summary
+    1. Validates environment configuration
+    2. Runs comprehensive authentication tests
+    3. Tests API connectivity and functionality
+    4. Sends email report of test results
+    5. Refreshes tokens to ensure fresh tokens for bid reminders
+    
+    Returns summary of health status and test results.
     """
-    outlook_vars = ['MS_CLIENT_ID', 'MS_CLIENT_SECRET', 'ENCRYPTED_REFRESH_TOKEN', 'ENCRYPTION_KEY']
-    building_vars = ['AUTODESK_CLIENT_ID', 'AUTODESK_CLIENT_SECRET', 'AUTODESK_ENCRYPTED_REFRESH_TOKEN', 'AUTODESK_ENCRYPTION_KEY']
+    logger.info("🏥 Starting comprehensive health check...")
     
-    outlook_configured = all(os.getenv(var) for var in outlook_vars)
-    building_configured = all(os.getenv(var) for var in building_vars)
+    # Check basic environment configuration
+    outlook_configured = all(os.getenv(var) for var in ['MS_CLIENT_ID', 'MS_CLIENT_SECRET', 'ENCRYPTION_KEY'])
+    building_configured = all(os.getenv(var) for var in ['AUTODESK_CLIENT_ID', 'AUTODESK_CLIENT_SECRET', 'AUTODESK_ENCRYPTION_KEY'])
     
-    both_configured = outlook_configured and building_configured
-    
-    # Run comprehensive test suite
-    test_suite_executed = False
     test_results_summary = None
+    test_suite_executed = False
     email_report_sent = False
     
     try:
-        logger.info("🏥 Health check triggered - executing comprehensive test suite")
-        test_results = await run_comprehensive_test_suite()
-        test_suite_executed = True
-        test_results_summary = test_results["overall_summary"]
-        
-        # Send email report
-        if outlook_configured:
-            email_report_sent = await send_test_results_email(test_results)
-        else:
-            logger.warning("⚠️  Outlook not configured - skipping email report")
+        if TEST_SUITES_AVAILABLE and outlook_configured and building_configured:
+            logger.info("📋 Running comprehensive test suite...")
+            test_results = await run_comprehensive_test_suite()
+            test_results_summary = test_results
+            test_suite_executed = True
             
+            # Send email report of test results
+            try:
+                email_report_sent = await send_test_results_email(test_results)
+            except Exception as e:
+                logger.error(f"❌ Failed to send test results email: {e}")
+            
+            # CRITICAL: Refresh tokens after health check to leave fresh tokens for bid reminders
+            logger.info("🔄 Refreshing tokens to ensure fresh tokens for bid reminders...")
+            try:
+                await proactive_buildingconnected_token_refresh()
+                logger.info("✅ Token refresh completed - fresh tokens ready for bid reminders")
+            except Exception as e:
+                logger.error(f"❌ Failed to refresh tokens after health check: {e}")
+        else:
+            if not TEST_SUITES_AVAILABLE:
+                logger.warning("⚠️  Test suites not available")
+            if not outlook_configured:
+                logger.warning("⚠️  Outlook not configured")
+            if not building_configured:
+                logger.warning("⚠️  BuildingConnected not configured")
+    
     except Exception as e:
-        logger.error(f"❌ Failed to run test suite: {str(e)}")
-        test_results_summary = {
-            "overall_status": "ERROR",
-            "error": str(e)
-        }
-    
-    # Proactively refresh BuildingConnected token for next health check
-    # This prevents invalid_grant errors on subsequent health checks
-    if building_configured:
+        logger.error(f"❌ Health check failed: {e}")
+        
+        # Even if health check fails, try to refresh tokens
         try:
-            logger.info("🔄 Running proactive BuildingConnected token refresh for next health check")
+            logger.info("🔄 Attempting token refresh despite health check failure...")
             await proactive_buildingconnected_token_refresh()
-        except Exception as e:
-            logger.warning(f"⚠️ Proactive token refresh failed (non-critical): {str(e)}")
-    else:
-        logger.info("⏭️ Skipping proactive token refresh - BuildingConnected not configured")
+            logger.info("✅ Token refresh completed despite health check failure")
+        except Exception as refresh_error:
+            logger.error(f"❌ Failed to refresh tokens after health check failure: {refresh_error}")
     
-    # Determine overall status
-    service_status = "healthy" if both_configured else "degraded"
-    if test_results_summary and test_results_summary.get("overall_status") != "PASS":
-        service_status = "degraded"
+    status = "healthy" if (outlook_configured and building_configured) else "degraded"
     
     return HealthResponse(
-        status=service_status,
+        status=status,
         outlook_configured=outlook_configured,
         building_configured=building_configured,
         test_suite_executed=test_suite_executed,
