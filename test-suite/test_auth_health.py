@@ -32,6 +32,9 @@ from clients.buildingconnected_client import BuildingConnectedClient
 
 load_dotenv()
 
+# Ensure logs directory exists
+os.makedirs('logs', exist_ok=True)
+
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,

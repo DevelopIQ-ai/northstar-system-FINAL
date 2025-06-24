@@ -57,6 +57,9 @@ from bid_reminder_agent import BidReminderAgent, BidReminderState
 
 load_dotenv()
 
+# Ensure logs directory exists
+os.makedirs('logs', exist_ok=True)
+
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
