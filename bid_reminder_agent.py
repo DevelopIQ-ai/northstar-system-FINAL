@@ -26,6 +26,7 @@ from auth.auth_helpers import (
 )
 from clients.graph_api_client import MSGraphClient, EmailImportance
 from clients.buildingconnected_client import BuildingConnectedClient, Project, BiddingInvitationData
+from email_tracker import EmailTracker
 
 load_dotenv()
 
@@ -86,6 +87,7 @@ class BidReminderState(TypedDict):
     
     # Email data
     reminder_email_sent: bool
+    email_tracker: Optional[EmailTracker]
     
     # Results
     error_message: Optional[str]
@@ -156,6 +158,12 @@ class BidReminderAgent:
             building_client = BuildingConnectedClient(building_token_manager)
             logger.info("✅ BuildingConnected client created successfully")
             
+            # Initialize email tracker
+            logger.info("Initializing email tracker")
+            email_tracker = EmailTracker()
+            await email_tracker.create_table_if_not_exists()
+            logger.info("✅ Email tracker initialized successfully")
+            
             # Verify BuildingConnected auth by testing projects endpoint instead of user info
             logger.info("Testing BuildingConnected authentication by fetching test projects")
             try:
@@ -173,6 +181,7 @@ class BidReminderAgent:
                 "building_token_manager": building_token_manager,
                 "outlook_client": outlook_client,
                 "building_client": building_client,
+                "email_tracker": email_tracker,
                 "error_message": None
             }
             
@@ -184,6 +193,7 @@ class BidReminderAgent:
                 "building_token_manager": None,
                 "outlook_client": None,
                 "building_client": None,
+                "email_tracker": None,
                 "error_message": f"Authentication failed: {str(e)}",
                 "workflow_successful": False
             }
@@ -338,6 +348,7 @@ class BidReminderAgent:
         outlook_client = state["outlook_client"]
         bidding_invitations = state.get("bidding_invitations", [])
         upcoming_projects = state.get("upcoming_projects", [])
+        email_tracker = state.get("email_tracker")
         
         if not outlook_client:
             logger.error("❌ Outlook client not initialized")
@@ -384,16 +395,45 @@ class BidReminderAgent:
                         importance=EmailImportance.HIGH
                     )
                     
-                    if send_response.success:
-                        emails_sent += 1
-                        logger.info(f"✅ Email sent successfully to {invitation.email}")
+                    # Log email attempt to database
+                    if email_tracker:
+                        try:
+                            if send_response.success:
+                                await email_tracker.log_email_attempt(invitation, project, "SUCCESS")
+                                emails_sent += 1
+                                logger.info(f"✅ Email sent successfully to {invitation.email}")
+                            else:
+                                await email_tracker.log_email_attempt(invitation, project, "FAILED")
+                                failed_emails.append(f"{invitation.email}: {send_response.error}")
+                                logger.error(f"❌ Failed to send email to {invitation.email}: {send_response.error}")
+                        except Exception as db_error:
+                            logger.error(f"❌ Failed to log email attempt to database: {str(db_error)}")
+                            # Continue with original logic if database logging fails
+                            if send_response.success:
+                                emails_sent += 1
+                                logger.info(f"✅ Email sent successfully to {invitation.email}")
+                            else:
+                                failed_emails.append(f"{invitation.email}: {send_response.error}")
+                                logger.error(f"❌ Failed to send email to {invitation.email}: {send_response.error}")
                     else:
-                        failed_emails.append(f"{invitation.email}: {send_response.error}")
-                        logger.error(f"❌ Failed to send email to {invitation.email}: {send_response.error}")
+                        # Fallback if email tracker not available
+                        if send_response.success:
+                            emails_sent += 1
+                            logger.info(f"✅ Email sent successfully to {invitation.email}")
+                        else:
+                            failed_emails.append(f"{invitation.email}: {send_response.error}")
+                            logger.error(f"❌ Failed to send email to {invitation.email}: {send_response.error}")
                         
                 except Exception as email_error:
                     failed_emails.append(f"{invitation.email}: {str(email_error)}")
                     logger.error(f"❌ Failed to send email to {invitation.email}: {str(email_error)}")
+                    
+                    # Log failed attempt to database if possible
+                    if email_tracker:
+                        try:
+                            await email_tracker.log_email_attempt(invitation, project_lookup.get(invitation.projectId), "FAILED")
+                        except Exception as db_error:
+                            logger.error(f"❌ Failed to log failed email attempt to database: {str(db_error)}")
             
             # Determine overall success
             if emails_sent > 0:
@@ -793,6 +833,7 @@ class BidReminderAgent:
             "upcoming_projects": None,
             "bidding_invitations": None,
             "reminder_email_sent": False,
+            "email_tracker": None,
             "error_message": None,
             "workflow_successful": False,
             "result_message": None
