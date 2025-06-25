@@ -10,6 +10,10 @@ from datetime import datetime, timezone
 
 import asyncpg
 from clients.buildingconnected_client import BiddingInvitationData, Project
+from sentry_config import (
+    set_database_context, add_breadcrumb, capture_exception_with_context,
+    SentryOperations, SentryComponents, SentrySeverity
+)
 
 logger = logging.getLogger(__name__)
 
@@ -78,6 +82,23 @@ class EmailTracker:
         Returns:
             The ID of the inserted record
         """
+        # Set database context for email logging
+        set_database_context("insert", "email_tracking")
+        
+        add_breadcrumb(
+            message=f"Logging email attempt: {status}",
+            category="database",
+            level="info",
+            data={
+                "operation": "log_email",
+                "table": "email_tracking",
+                "email": invitation.email,
+                "status": status
+            }
+        )
+        
+        logger.debug(f"📝 Logging email attempt for {invitation.email} with status {status}")
+        
         try:
             # Parse the bids due date (convert to naive UTC for database)
             bids_due_at = None
@@ -139,6 +160,20 @@ class EmailTracker:
             logger.info("🔐 Database connection closed")
             
             logger.info(f"✅ Email tracking record created: ID {record_id}, Status: {status}, Email: {invitation.email}")
+            
+            add_breadcrumb(
+                message="Email attempt logged successfully",
+                category="database",
+                level="info",
+                data={
+                    "operation": "log_email",
+                    "table": "email_tracking",
+                    "record_id": record_id,
+                    "email": invitation.email,
+                    "status": status
+                }
+            )
+            
             return record_id
             
         except Exception as e:
@@ -146,10 +181,37 @@ class EmailTracker:
             logger.error(f"   Invitation ID: {invitation.id}")
             logger.error(f"   Email: {invitation.email}")
             logger.error(f"   Status: {status}")
+            
+            capture_exception_with_context(
+                e,
+                operation=SentryOperations.DATABASE_OPERATION,
+                component=SentryComponents.DATABASE,
+                severity=SentrySeverity.HIGH,
+                extra_context={
+                    "db_operation": "log_email_attempt",
+                    "table": "email_tracking",
+                    "invitation_id": invitation.id,
+                    "email": invitation.email,
+                    "status": status
+                }
+            )
+            
             raise
     
     async def get_email_stats(self) -> Dict[str, Any]:
         """Get email sending statistics"""
+        # Set database context for stats query
+        set_database_context("select", "email_tracking")
+        
+        add_breadcrumb(
+            message="Getting email statistics",
+            category="database",
+            level="info",
+            data={"operation": "get_stats", "table": "email_tracking"}
+        )
+        
+        logger.debug("📊 Getting email sending statistics")
+        
         try:
             conn = await asyncpg.connect(self.database_url)
             
@@ -177,10 +239,34 @@ class EmailTracker:
             
         except Exception as e:
             logger.error(f"❌ Failed to get email stats: {str(e)}")
+            
+            capture_exception_with_context(
+                e,
+                operation=SentryOperations.DATABASE_OPERATION,
+                component=SentryComponents.DATABASE,
+                severity=SentrySeverity.MEDIUM,
+                extra_context={
+                    "db_operation": "get_email_stats",
+                    "table": "email_tracking"
+                }
+            )
+            
             return {'error': str(e)}
     
     async def get_recent_emails(self, limit: int = 50) -> List[Dict[str, Any]]:
         """Get recent email sends"""
+        # Set database context for recent emails query
+        set_database_context("select", "email_tracking")
+        
+        add_breadcrumb(
+            message=f"Getting recent emails (limit: {limit})",
+            category="database",
+            level="info",
+            data={"operation": "get_recent", "table": "email_tracking", "limit": limit}
+        )
+        
+        logger.debug(f"📋 Getting recent {limit} email records")
+        
         try:
             conn = await asyncpg.connect(self.database_url)
             
@@ -197,4 +283,17 @@ class EmailTracker:
             
         except Exception as e:
             logger.error(f"❌ Failed to get recent emails: {str(e)}")
+            
+            capture_exception_with_context(
+                e,
+                operation=SentryOperations.DATABASE_OPERATION,
+                component=SentryComponents.DATABASE,
+                severity=SentrySeverity.MEDIUM,
+                extra_context={
+                    "db_operation": "get_recent_emails",
+                    "table": "email_tracking",
+                    "limit": limit
+                }
+            )
+            
             return [] 

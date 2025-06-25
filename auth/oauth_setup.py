@@ -356,8 +356,8 @@ async def setup_microsoft_auth_flow():
         encrypted_token, encryption_key = await setup_microsoft_oauth(client_id, client_secret)
         
         # Save to .env file
-        save_to_env('ENCRYPTED_REFRESH_TOKEN', encrypted_token)
-        save_to_env('ENCRYPTION_KEY', encryption_key)
+        save_to_env('MS_ENCRYPTED_REFRESH_TOKEN', encrypted_token)
+        save_to_env('MS_ENCRYPTION_KEY', encryption_key)
         
         print("✅ Microsoft Graph authentication setup complete!")
         return True

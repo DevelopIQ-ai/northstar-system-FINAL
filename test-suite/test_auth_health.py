@@ -124,7 +124,7 @@ class AuthHealthChecker:
         logger.info("🔍 Test 1: Environment Variable Validation")
         
         # Microsoft Graph variables
-        ms_vars = ['MS_CLIENT_ID', 'MS_CLIENT_SECRET', 'ENCRYPTED_REFRESH_TOKEN', 'ENCRYPTION_KEY']
+        ms_vars = ['MS_CLIENT_ID', 'MS_CLIENT_SECRET', 'MS_ENCRYPTED_REFRESH_TOKEN', 'MS_ENCRYPTION_KEY']
         # BuildingConnected variables
         bc_vars = ['AUTODESK_CLIENT_ID', 'AUTODESK_CLIENT_SECRET', 'AUTODESK_ENCRYPTED_REFRESH_TOKEN', 'AUTODESK_ENCRYPTION_KEY']
         

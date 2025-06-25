@@ -28,8 +28,8 @@ variables = {
 # Microsoft/Outlook OAuth
 MS_CLIENT_ID = { required = true, description = "Microsoft Azure App Registration Client ID" }
 MS_CLIENT_SECRET = { required = true, description = "Microsoft Azure App Registration Client Secret" }
-ENCRYPTED_REFRESH_TOKEN = { required = true, description = "Encrypted Microsoft OAuth refresh token" }
-ENCRYPTION_KEY = { required = true, description = "Encryption key for Microsoft tokens" }
+MS_ENCRYPTED_REFRESH_TOKEN = { required = true, description = "Encrypted Microsoft OAuth refresh token" }
+MS_ENCRYPTION_KEY = { required = true, description = "Encryption key for Microsoft tokens" }
 
 # Autodesk/BuildingConnected OAuth  
 AUTODESK_CLIENT_ID = { required = true, description = "Autodesk/BuildingConnected Client ID" }

@@ -10,7 +10,11 @@ from typing import Optional, List
 from datetime import datetime
 
 import sentry_sdk
-from sentry_sdk.integrations.logging import LoggingIntegration
+from sentry_config import (
+    init_sentry, set_workflow_context, capture_exception_with_context,
+    capture_message_with_context, add_breadcrumb, create_transaction,
+    SentryOperations, SentryComponents, SentrySeverity
+)
 
 from dotenv import load_dotenv
 from langgraph.graph import StateGraph, START, END
@@ -30,29 +34,7 @@ from email_tracker import EmailTracker
 
 load_dotenv()
 
-# Initialize Sentry for standalone agent
-sentry_dsn = os.getenv("SENTRY_DSN")
-if sentry_dsn:
-    sentry_sdk.init(
-        dsn=sentry_dsn,
-        integrations=[
-            LoggingIntegration(
-                level=logging.INFO,        # Capture info and above as breadcrumbs
-                event_level=logging.WARNING  # Send warnings and above as events
-            ),
-        ],
-        traces_sample_rate=0.1,
-        environment=os.getenv("ENVIRONMENT", "production"),
-        release=os.getenv("RELEASE_VERSION", "1.0.0"),
-        send_default_pii=False,
-        # Enhanced logging options
-        debug=os.getenv("SENTRY_DEBUG", "false").lower() == "true",
-        attach_stacktrace=True,
-        max_breadcrumbs=50,
-        before_send=lambda event, hint: event if event.get('level') != 'debug' else None,
-    )
-
-# Configure logging - optimized for Railway + Sentry
+# Configure logging first - optimized for Railway + Sentry
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -61,16 +43,15 @@ logging.basicConfig(
     ]
 )
 
-# Configure Sentry logging if available
-if sentry_dsn:
-    # Add custom Sentry handler for explicit log forwarding
-    sentry_handler = sentry_sdk.integrations.logging.SentryHandler()
-    sentry_handler.setLevel(logging.WARNING)  # Only send warnings and above
-    
-    # Get root logger and add Sentry handler
-    root_logger = logging.getLogger()
-    root_logger.addHandler(sentry_handler)
+# Sentry logging is now handled by centralized configuration
 logger = logging.getLogger(__name__)
+
+# Initialize Sentry with enhanced configuration for workflow component
+sentry_initialized = init_sentry(component=SentryComponents.WORKFLOW)
+if sentry_initialized:
+    logger.info("✅ Sentry initialized for workflow component with enhanced configuration")
+else:
+    logger.warning("⚠️ Sentry not initialized for workflow - SENTRY_DSN not configured")
 
 
 class BidReminderState(TypedDict):
@@ -138,7 +119,18 @@ class BidReminderAgent:
     @traceable(name="🔐 Initialize Authentication", tags=["auth", "setup"])
     async def initialize_auth_node(self, state: BidReminderState) -> BidReminderState:
         """Initialize authentication for both Outlook and BuildingConnected"""
+        # Set workflow context for this node
+        set_workflow_context("initialize_auth")
+        
         logger.info("🔐 Starting authentication initialization node")
+        
+        add_breadcrumb(
+            message="Authentication initialization started",
+            category="workflow",
+            level="info",
+            data={"node": "initialize_auth"}
+        )
+        
         try:
             # Initialize Outlook authentication
             logger.info("Creating Outlook token manager from environment")
@@ -187,6 +179,19 @@ class BidReminderAgent:
             
         except Exception as e:
             logger.error(f"❌ Authentication initialization failed: {str(e)}")
+            
+            # Capture authentication failure
+            capture_exception_with_context(
+                e,
+                operation=SentryOperations.AUTH_FLOW,
+                component=SentryComponents.WORKFLOW,
+                severity=SentrySeverity.CRITICAL,
+                extra_context={
+                    "node": "initialize_auth",
+                    "stage": "initialization"
+                }
+            )
+            
             return {
                 **state,
                 "outlook_token_manager": None,
@@ -201,7 +206,17 @@ class BidReminderAgent:
     @traceable(name="📋 Check Upcoming Projects", tags=["projects", "data-fetch"])
     async def check_upcoming_projects_node(self, state: BidReminderState) -> BidReminderState:
         """Check BuildingConnected for projects due in 5-10 days"""
+        # Set workflow context for this node
+        set_workflow_context("check_upcoming_projects")
+        
         logger.info("📋 Starting project check node")
+        
+        add_breadcrumb(
+            message="Project check started",
+            category="workflow", 
+            level="info",
+            data={"node": "check_upcoming_projects", "days_to_check": self.days_before_bid}
+        )
         
         if state.get("error_message"):
             logger.warning("Skipping project check due to previous error")
@@ -244,9 +259,23 @@ class BidReminderAgent:
             
             logger.info(f"✅ Project check completed: {len(unique_projects)} unique projects found")
             
+            # Update workflow context with project count
+            set_workflow_context("check_upcoming_projects", len(unique_projects))
+            
             # Log project details
             for project in unique_projects:
                 logger.info(f"  - {project.name} | Due: {project.bidsDueAt} | State: {project.state}")
+            
+            add_breadcrumb(
+                message="Projects found and processed",
+                category="workflow",
+                level="info",
+                data={
+                    "node": "check_upcoming_projects",
+                    "projects_found": len(unique_projects),
+                    "unique_projects": len(unique_projects)
+                }
+            )
             
             return {
                 **state,
@@ -256,6 +285,19 @@ class BidReminderAgent:
             
         except Exception as e:
             logger.error(f"❌ Failed to check projects: {str(e)}")
+            
+            # Capture project check failure
+            capture_exception_with_context(
+                e,
+                operation=SentryOperations.PROJECT_QUERY,
+                component=SentryComponents.WORKFLOW,
+                severity=SentrySeverity.HIGH,
+                extra_context={
+                    "node": "check_upcoming_projects",
+                    "days_to_check": self.days_before_bid
+                }
+            )
+            
             return {
                 **state,
                 "upcoming_projects": None,
@@ -265,7 +307,19 @@ class BidReminderAgent:
     
     async def get_bidding_invitations_node(self, state: BidReminderState) -> BidReminderState:
         """Get bidding invitations for each upcoming project"""
+        # Set workflow context for this node  
+        upcoming_projects = state.get("upcoming_projects", [])
+        project_count = len(upcoming_projects) if upcoming_projects else 0
+        set_workflow_context("get_bidding_invitations", project_count)
+        
         logger.info("📧 Starting bidding invitations check node")
+        
+        add_breadcrumb(
+            message="Bidding invitations check started",
+            category="workflow",
+            level="info",
+            data={"node": "get_bidding_invitations", "projects_to_process": project_count}
+        )
         
         if state.get("error_message"):
             logger.warning("Skipping bidding invitations check due to previous error")
@@ -317,6 +371,17 @@ class BidReminderAgent:
             
             logger.info(f"✅ Bidding invitations check completed: {len(all_bidding_invitations)} total invitations found")
             
+            add_breadcrumb(
+                message="Bidding invitations retrieved",
+                category="workflow",
+                level="info",
+                data={
+                    "node": "get_bidding_invitations",
+                    "invitations_found": len(all_bidding_invitations),
+                    "projects_processed": len(upcoming_projects)
+                }
+            )
+            
             return {
                 **state,
                 "bidding_invitations": all_bidding_invitations,
@@ -325,6 +390,19 @@ class BidReminderAgent:
             
         except Exception as e:
             logger.error(f"❌ Failed to get bidding invitations: {str(e)}")
+            
+            # Capture invitation fetch failure
+            capture_exception_with_context(
+                e,
+                operation=SentryOperations.INVITATION_FETCH,
+                component=SentryComponents.WORKFLOW,
+                severity=SentrySeverity.HIGH,
+                extra_context={
+                    "node": "get_bidding_invitations",
+                    "projects_count": len(upcoming_projects) if upcoming_projects else 0
+                }
+            )
+            
             return {
                 **state,
                 "bidding_invitations": None,
@@ -335,7 +413,19 @@ class BidReminderAgent:
     @traceable(name="📧 Send Invitation Emails", tags=["email", "invitations"])
     async def send_reminder_email_node(self, state: BidReminderState) -> BidReminderState:
         """Send personalized emails to each bidding invitation"""
+        # Set workflow context for this node
+        bidding_invitations = state.get("bidding_invitations", [])
+        invitation_count = len(bidding_invitations) if bidding_invitations else 0
+        set_workflow_context("send_reminder_email", invitation_count)
+        
         logger.info("📧 Starting email sending node")
+        
+        add_breadcrumb(
+            message="Email sending started",
+            category="workflow",
+            level="info",
+            data={"node": "send_reminder_email", "emails_to_send": invitation_count}
+        )
         
         if state.get("error_message"):
             logger.warning("Skipping email sending due to previous error")
@@ -442,6 +532,17 @@ class BidReminderAgent:
                     success_message += f", {len(failed_emails)} failed"
                 logger.info(success_message)
                 
+                add_breadcrumb(
+                    message="Emails sent successfully",
+                    category="workflow",
+                    level="info",
+                    data={
+                        "node": "send_reminder_email",
+                        "emails_sent": emails_sent,
+                        "emails_failed": len(failed_emails)
+                    }
+                )
+                
                 return {
                     **state,
                     "reminder_email_sent": True,
@@ -451,6 +552,20 @@ class BidReminderAgent:
             else:
                 error_message = f"Failed to send any emails. Errors: {'; '.join(failed_emails[:3])}"
                 logger.error(error_message)
+                
+                # Capture email sending failure
+                capture_message_with_context(
+                    "All email sends failed",
+                    "error",
+                    operation=SentryOperations.EMAIL_SEND,
+                    component=SentryComponents.WORKFLOW,
+                    extra_context={
+                        "node": "send_reminder_email",
+                        "failed_emails": failed_emails[:5],  # First 5 errors
+                        "total_attempts": len(bidding_invitations)
+                    }
+                )
+                
                 return {
                     **state,
                     "reminder_email_sent": False,
@@ -460,6 +575,19 @@ class BidReminderAgent:
                 
         except Exception as e:
             logger.error(f"❌ Email sending process failed: {str(e)}")
+            
+            # Capture email process failure
+            capture_exception_with_context(
+                e,
+                operation=SentryOperations.EMAIL_SEND,
+                component=SentryComponents.WORKFLOW,
+                severity=SentrySeverity.CRITICAL,
+                extra_context={
+                    "node": "send_reminder_email",
+                    "invitations_count": len(bidding_invitations) if bidding_invitations else 0
+                }
+            )
+            
             return {
                 **state,
                 "reminder_email_sent": False,
@@ -470,7 +598,26 @@ class BidReminderAgent:
     @traceable(name="🏁 Finalize Results", tags=["finalize", "summary"])
     async def finalize_result_node(self, state: BidReminderState) -> BidReminderState:
         """Finalize the workflow result - showing project data, bidding invitations, and email status"""
+        # Set workflow context for finalization
+        upcoming_projects = state.get("upcoming_projects", [])
+        bidding_invitations = state.get("bidding_invitations", [])
+        project_count = len(upcoming_projects) if upcoming_projects else 0
+        invitation_count = len(bidding_invitations) if bidding_invitations else 0
+        
+        set_workflow_context("finalize_result", project_count)
+        
         logger.info("🏁 Starting finalize result node")
+        
+        add_breadcrumb(
+            message="Workflow finalization started",
+            category="workflow",
+            level="info",
+            data={
+                "node": "finalize_result",
+                "projects_found": project_count,
+                "invitations_found": invitation_count
+            }
+        )
         
         upcoming_projects = state.get("upcoming_projects", [])
         bidding_invitations = state.get("bidding_invitations", [])
@@ -504,6 +651,35 @@ class BidReminderAgent:
             logger.info(f"✅ Workflow completed successfully with {project_count} projects, {invitation_count} invitations, emails sent: {reminder_email_sent}")
         
         logger.info("🏁 Finalize result node completed")
+        
+        # Final workflow status for Sentry
+        final_status = "success" if workflow_successful else "failed"
+        
+        add_breadcrumb(
+            message="Workflow finalized",
+            category="workflow",
+            level="info" if workflow_successful else "error",
+            data={
+                "node": "finalize_result",
+                "workflow_status": final_status,
+                "projects_found": project_count,
+                "invitations_found": invitation_count,
+                "emails_sent": reminder_email_sent
+            }
+        )
+        
+        # Capture workflow completion message
+        if not workflow_successful and error_message:
+            capture_message_with_context(
+                f"Workflow completed with errors: {error_message}",
+                "warning",
+                operation=SentryOperations.BID_REMINDER,
+                component=SentryComponents.WORKFLOW,
+                extra_context={
+                    "node": "finalize_result",
+                    "final_status": final_status
+                }
+            )
         
         return {
             **state,
@@ -821,7 +997,23 @@ class BidReminderAgent:
     async def run_bid_reminder_workflow(self) -> dict:
         """Run the bid reminder workflow"""
         logger.info("🚀 Starting bid reminder workflow execution")
-        graph = self.build_graph()
+        
+        # Create main workflow transaction
+        with create_transaction(
+            name="bid_reminder_workflow_execution",
+            operation=SentryOperations.BID_REMINDER,
+            component=SentryComponents.WORKFLOW,
+            description="Complete bid reminder workflow execution"
+        ) as transaction:
+            
+            add_breadcrumb(
+                message="Workflow execution started",
+                category="workflow",
+                level="info",
+                data={"start_time": self.run_start_time.isoformat()}
+            )
+            
+            graph = self.build_graph()
         
         # Initial state
         logger.info("Initializing workflow state")
@@ -858,18 +1050,38 @@ class BidReminderAgent:
             }
             logger.info(f"🔍 Enhanced LangSmith tracing enabled: {run_name}")
         
-        result = await graph.ainvoke(initial_state, config=config)
-        logger.info("✅ Workflow execution completed")
-        
-        # Log final results
-        logger.info("📊 Workflow Results:")
-        logger.info(f"  - Successful: {result.get('workflow_successful', False)}")
-        logger.info(f"  - Projects found: {len(result.get('upcoming_projects', []))}")
-        logger.info(f"  - Email sent: {result.get('reminder_email_sent', False)}")
-        if result.get('error_message'):
-            logger.error(f"  - Error: {result.get('error_message')}")
-        
-        return result
+            result = await graph.ainvoke(initial_state, config=config)
+            logger.info("✅ Workflow execution completed")
+            
+            # Set transaction data
+            transaction.set_data("workflow_successful", result.get('workflow_successful', False))
+            transaction.set_data("projects_found", len(result.get('upcoming_projects', [])))
+            transaction.set_data("email_sent", result.get('reminder_email_sent', False))
+            
+            if result.get('error_message'):
+                transaction.set_tag("error", True)
+                transaction.set_data("error_message", result.get('error_message'))
+            
+            # Log final results
+            logger.info("📊 Workflow Results:")
+            logger.info(f"  - Successful: {result.get('workflow_successful', False)}")
+            logger.info(f"  - Projects found: {len(result.get('upcoming_projects', []))}")
+            logger.info(f"  - Email sent: {result.get('reminder_email_sent', False)}")
+            if result.get('error_message'):
+                logger.error(f"  - Error: {result.get('error_message')}")
+            
+            add_breadcrumb(
+                message="Workflow execution completed",
+                category="workflow",
+                level="info",
+                data={
+                    "workflow_successful": result.get('workflow_successful', False),
+                    "projects_found": len(result.get('upcoming_projects', [])),
+                    "email_sent": result.get('reminder_email_sent', False)
+                }
+            )
+            
+            return result
 
 
 # Convenience function

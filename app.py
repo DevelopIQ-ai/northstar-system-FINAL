@@ -15,9 +15,11 @@ from datetime import datetime
 from contextlib import asynccontextmanager
 
 import sentry_sdk
-from sentry_sdk.integrations.fastapi import FastApiIntegration
-from sentry_sdk.integrations.starlette import StarletteIntegration
-from sentry_sdk.integrations.logging import LoggingIntegration
+from sentry_config import (
+    init_sentry, set_health_check_context, capture_exception_with_context,
+    capture_message_with_context, add_breadcrumb, create_transaction,
+    SentryOperations, SentryComponents, SentrySeverity
+)
 
 from fastapi import FastAPI, HTTPException, status, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
@@ -26,6 +28,21 @@ from pydantic import BaseModel, Field
 from dotenv import load_dotenv
 
 from bid_reminder_agent import run_bid_reminder
+
+# Load environment variables
+load_dotenv()
+
+# Configure logging first - optimized for Railway + Sentry
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.StreamHandler(),  # Railway captures stdout/stderr
+    ]
+)
+
+# Sentry logging is now handled by centralized configuration
+logger = logging.getLogger(__name__)
 
 # Import test suite components
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
@@ -45,57 +62,12 @@ except ImportError as e:
     logger.warning(f"⚠️  Test suite imports failed: {e}")
     TEST_SUITES_AVAILABLE = False
 
-# Load environment variables
-load_dotenv()
-
-# Initialize Sentry with comprehensive logging
-sentry_dsn = os.getenv("SENTRY_DSN")
-if sentry_dsn:
-    sentry_sdk.init(
-        dsn=sentry_dsn,
-        integrations=[
-            FastApiIntegration(
-                failed_request_status_codes=[400, range(500, 600)]
-            ),
-            StarletteIntegration(
-                failed_request_status_codes=[400, range(500, 600)]
-            ),
-            LoggingIntegration(
-                level=logging.INFO,        # Capture info and above as breadcrumbs
-                event_level=logging.WARNING  # Send warnings and above as events
-            ),
-        ],
-        traces_sample_rate=0.1,
-        environment=os.getenv("ENVIRONMENT", "production"),
-        release=os.getenv("RELEASE_VERSION", "1.0.0"),
-        send_default_pii=False,
-        # Enhanced configuration for better logging
-        debug=os.getenv("SENTRY_DEBUG", "false").lower() == "true",
-        attach_stacktrace=True,
-        max_breadcrumbs=50,
-        before_send=lambda event, hint: event if event.get('level') != 'debug' else None,
-    )
-
-# Configure logging - optimized for Railway + Sentry
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.StreamHandler(),  # Railway captures stdout/stderr
-    ]
-)
-
-# Configure Sentry logging if available
-if sentry_dsn:
-    # Add custom Sentry handler for explicit log forwarding
-    sentry_handler = sentry_sdk.integrations.logging.SentryHandler()
-    sentry_handler.setLevel(logging.WARNING)  # Only send warnings and above
-    
-    # Get root logger and add Sentry handler
-    root_logger = logging.getLogger()
-    root_logger.addHandler(sentry_handler)
-
-logger = logging.getLogger(__name__)
+# Initialize Sentry with enhanced configuration
+sentry_initialized = init_sentry(component=SentryComponents.API)
+if sentry_initialized:
+    logger.info("✅ Sentry initialized for API component with enhanced configuration")
+else:
+    logger.warning("⚠️ Sentry not initialized - SENTRY_DSN not configured")
 
 # Global state for graceful shutdown
 shutdown_event = asyncio.Event()
@@ -108,8 +80,16 @@ async def lifespan(app: FastAPI):
     # Startup
     logger.info("🚀 Starting Bid Reminder Agent API...")
     
+    # Add Sentry breadcrumb for startup
+    add_breadcrumb(
+        message="API startup initiated",
+        category="lifecycle",
+        level="info",
+        data={"component": "api", "action": "startup"}
+    )
+    
     # Check environment configuration
-    outlook_vars = ['MS_CLIENT_ID', 'MS_CLIENT_SECRET', 'ENCRYPTED_REFRESH_TOKEN', 'ENCRYPTION_KEY']
+    outlook_vars = ['MS_CLIENT_ID', 'MS_CLIENT_SECRET', 'MS_ENCRYPTED_REFRESH_TOKEN', 'MS_ENCRYPTION_KEY']
     building_vars = ['AUTODESK_CLIENT_ID', 'AUTODESK_CLIENT_SECRET', 'AUTODESK_ENCRYPTED_REFRESH_TOKEN', 'AUTODESK_ENCRYPTION_KEY']
     
     missing_outlook = [var for var in outlook_vars if not os.getenv(var)]
@@ -132,6 +112,15 @@ async def lifespan(app: FastAPI):
     
     # Shutdown
     logger.info("🔄 Initiating graceful shutdown...")
+    
+    # Add Sentry breadcrumb for shutdown
+    add_breadcrumb(
+        message="API shutdown initiated",
+        category="lifecycle",
+        level="info",
+        data={"component": "api", "action": "shutdown"}
+    )
+    
     shutdown_event.set()
     
     # Wait for active connections to finish (with timeout)
@@ -639,10 +628,28 @@ async def health_check():
     
     Returns summary of health status and test results.
     """
-    logger.info("🏥 Starting comprehensive health check...")
+    # Set health check context for Sentry
+    set_health_check_context("comprehensive", "starting")
+    
+    # Create Sentry transaction for performance monitoring
+    with create_transaction(
+        name="health_check_comprehensive",
+        operation=SentryOperations.HEALTH_CHECK,
+        component=SentryComponents.API,
+        description="Comprehensive health check with test suites"
+    ) as transaction:
+        
+        logger.info("🏥 Starting comprehensive health check...")
+        
+        add_breadcrumb(
+            message="Health check started",
+            category="health_check",
+            level="info",
+            data={"type": "comprehensive"}
+        )
     
     # Check basic environment configuration
-    outlook_configured = all(os.getenv(var) for var in ['MS_CLIENT_ID', 'MS_CLIENT_SECRET', 'ENCRYPTION_KEY'])
+    outlook_configured = all(os.getenv(var) for var in ['MS_CLIENT_ID', 'MS_CLIENT_SECRET', 'MS_ENCRYPTION_KEY'])
     building_configured = all(os.getenv(var) for var in ['AUTODESK_CLIENT_ID', 'AUTODESK_CLIENT_SECRET', 'AUTODESK_ENCRYPTION_KEY'])
     
     test_results_summary = None
@@ -652,52 +659,143 @@ async def health_check():
     try:
         if TEST_SUITES_AVAILABLE and outlook_configured and building_configured:
             logger.info("📋 Running comprehensive test suite...")
+            
+            add_breadcrumb(
+                message="Starting test suite execution",
+                category="health_check", 
+                level="info",
+                data={"outlook_configured": outlook_configured, "building_configured": building_configured}
+            )
+            
+            set_health_check_context("test_suite", "running")
             test_results = await run_comprehensive_test_suite()
             test_results_summary = test_results
             test_suite_executed = True
             
             # Send email report of test results
             try:
+                set_health_check_context("email_report", "sending")
                 email_report_sent = await send_test_results_email(test_results)
+                
+                add_breadcrumb(
+                    message="Email report sent",
+                    category="health_check",
+                    level="info", 
+                    data={"success": email_report_sent}
+                )
             except Exception as e:
                 logger.error(f"❌ Failed to send test results email: {e}")
+                
+                capture_exception_with_context(
+                    e,
+                    operation=SentryOperations.HEALTH_CHECK,
+                    component=SentryComponents.API,
+                    severity=SentrySeverity.MEDIUM,
+                    extra_context={"stage": "email_report", "action": "send_results"}
+                )
             
             # CRITICAL: Refresh tokens after health check to leave fresh tokens for bid reminders
             logger.info("🔄 Refreshing tokens to ensure fresh tokens for bid reminders...")
+            
+            set_health_check_context("token_refresh", "starting")
             try:
                 await proactive_buildingconnected_token_refresh()
                 logger.info("✅ Token refresh completed - fresh tokens ready for bid reminders")
+                
+                add_breadcrumb(
+                    message="Token refresh completed",
+                    category="health_check",
+                    level="info",
+                    data={"action": "proactive_refresh"}
+                )
             except Exception as e:
                 logger.error(f"❌ Failed to refresh tokens after health check: {e}")
+                
+                capture_exception_with_context(
+                    e,
+                    operation=SentryOperations.HEALTH_CHECK,
+                    component=SentryComponents.API,
+                    severity=SentrySeverity.HIGH,
+                    extra_context={"stage": "token_refresh", "action": "proactive_refresh"}
+                )
         else:
+            set_health_check_context("configuration", "degraded")
+            
+            config_issues = []
             if not TEST_SUITES_AVAILABLE:
                 logger.warning("⚠️  Test suites not available")
+                config_issues.append("test_suites_unavailable")
             if not outlook_configured:
                 logger.warning("⚠️  Outlook not configured")
+                config_issues.append("outlook_not_configured")
             if not building_configured:
                 logger.warning("⚠️  BuildingConnected not configured")
+                config_issues.append("building_connected_not_configured")
+            
+            capture_message_with_context(
+                "Health check configuration issues detected",
+                "warning",
+                operation=SentryOperations.HEALTH_CHECK,
+                component=SentryComponents.API,
+                extra_context={"issues": config_issues}
+            )
     
     except Exception as e:
         logger.error(f"❌ Health check failed: {e}")
         
+        # Capture the health check failure
+        capture_exception_with_context(
+            e,
+            operation=SentryOperations.HEALTH_CHECK,
+            component=SentryComponents.API,
+            severity=SentrySeverity.CRITICAL,
+            extra_context={"stage": "main_health_check"}
+        )
+        
         # Even if health check fails, try to refresh tokens
         try:
             logger.info("🔄 Attempting token refresh despite health check failure...")
+            set_health_check_context("token_refresh", "fallback")
             await proactive_buildingconnected_token_refresh()
             logger.info("✅ Token refresh completed despite health check failure")
         except Exception as refresh_error:
             logger.error(f"❌ Failed to refresh tokens after health check failure: {refresh_error}")
+            
+            capture_exception_with_context(
+                refresh_error,
+                operation=SentryOperations.HEALTH_CHECK,
+                component=SentryComponents.API,
+                severity=SentrySeverity.CRITICAL,
+                extra_context={"stage": "fallback_token_refresh"}
+            )
     
-    status = "healthy" if (outlook_configured and building_configured) else "degraded"
-    
-    return HealthResponse(
-        status=status,
-        outlook_configured=outlook_configured,
-        building_configured=building_configured,
-        test_suite_executed=test_suite_executed,
-        test_results_summary=test_results_summary,
-        email_report_sent=email_report_sent
-    )
+        status = "healthy" if (outlook_configured and building_configured) else "degraded"
+        
+        # Final health check status
+        set_health_check_context("final", status)
+        
+        add_breadcrumb(
+            message="Health check completed",
+            category="health_check",
+            level="info",
+            data={
+                "status": status,
+                "test_suite_executed": test_suite_executed,
+                "email_report_sent": email_report_sent
+            }
+        )
+        
+        transaction.set_data("health_status", status)
+        transaction.set_data("test_suite_executed", test_suite_executed)
+        
+        return HealthResponse(
+            status=status,
+            outlook_configured=outlook_configured,
+            building_configured=building_configured,
+            test_suite_executed=test_suite_executed,
+            test_results_summary=test_results_summary,
+            email_report_sent=email_report_sent
+        )
 
 
 @app.post("/run-bid-reminder", response_model=BidReminderResponse, summary="Run bid reminder workflow")
@@ -710,27 +808,69 @@ async def run_bid_reminder_workflow():
     2. Sends reminder email about those projects
     3. Returns the results
     """
-    try:
-        # Run the bid reminder workflow
-        result = await run_bid_reminder()
+    # Create Sentry transaction for workflow monitoring
+    with create_transaction(
+        name="bid_reminder_workflow",
+        operation=SentryOperations.BID_REMINDER,
+        component=SentryComponents.API,
+        description="Main bid reminder workflow execution"
+    ) as transaction:
         
-        # Extract project count
-        upcoming_projects = result.get("upcoming_projects", [])
-        projects_found = len(upcoming_projects) if upcoming_projects else 0
-        
-        return BidReminderResponse(
-            workflow_successful=result.get('workflow_successful', False),
-            result_message=result.get('result_message'),
-            error_message=result.get('error_message'),
-            projects_found=projects_found,
-            email_sent=result.get('reminder_email_sent', False)
+        add_breadcrumb(
+            message="Bid reminder workflow started",
+            category="workflow",
+            level="info",
+            data={"endpoint": "/run-bid-reminder"}
         )
         
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to run bid reminder workflow: {str(e)}"
-        )
+        try:
+            # Run the bid reminder workflow
+            result = await run_bid_reminder()
+        
+            # Extract project count
+            upcoming_projects = result.get("upcoming_projects", [])
+            projects_found = len(upcoming_projects) if upcoming_projects else 0
+            
+            # Set transaction data
+            transaction.set_data("projects_found", projects_found)
+            transaction.set_data("workflow_successful", result.get('workflow_successful', False))
+            transaction.set_data("email_sent", result.get('reminder_email_sent', False))
+            
+            add_breadcrumb(
+                message="Bid reminder workflow completed",
+                category="workflow",
+                level="info",
+                data={
+                    "projects_found": projects_found,
+                    "workflow_successful": result.get('workflow_successful', False)
+                }
+            )
+            
+            return BidReminderResponse(
+                workflow_successful=result.get('workflow_successful', False),
+                result_message=result.get('result_message'),
+                error_message=result.get('error_message'),
+                projects_found=projects_found,
+                email_sent=result.get('reminder_email_sent', False)
+            )
+        
+        except Exception as e:
+            # Capture workflow failure
+            capture_exception_with_context(
+                e,
+                operation=SentryOperations.BID_REMINDER,
+                component=SentryComponents.API,
+                severity=SentrySeverity.CRITICAL,
+                extra_context={"endpoint": "/run-bid-reminder", "stage": "workflow_execution"}
+            )
+            
+            transaction.set_tag("error", True)
+            transaction.set_data("error_message", str(e))
+            
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to run bid reminder workflow: {str(e)}"
+            )
 
 
 def setup_signal_handlers():

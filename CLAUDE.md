@@ -49,7 +49,7 @@ The application uses **LangGraph** for workflow orchestration with a 5-node stat
 1. `initialize_auth` - Authenticate with Microsoft Graph + BuildingConnected APIs
 2. `check_upcoming_projects` - Query projects with bids due in 5-10 days  
 3. `get_bidding_invitations` - Retrieve contractor invitation details
-4. `send_reminder_email` - Send personalized HTML emails with bid portal links
+4. `send_reminder_email` - Send personalized text emails with bid portal links using spyntax formatting
 5. `finalize_result` - Log results and cleanup
 
 Each node has conditional routing that handles errors gracefully and continues the workflow when possible.
@@ -80,6 +80,15 @@ Uses `BidReminderState` TypedDict with LangGraph for workflow state:
 - Email status and error tracking
 - Success/failure state with detailed messages
 
+### Database Email Tracking
+**EmailTracker Integration**: Comprehensive PostgreSQL-based email logging system:
+
+- **AsyncPG Integration**: Uses `asyncpg` for high-performance async database operations
+- **Email Tracking Table**: 15-field schema tracking all email attempts with timestamps
+- **Status Monitoring**: Tracks SUCCESS/FAILED status for each email send
+- **Analytics Support**: Built-in methods for email statistics and recent send history
+- **Error Resilience**: Comprehensive error handling for database connectivity issues
+
 ## Key Environment Variables
 
 ### Authentication (Required)
@@ -87,8 +96,8 @@ Uses `BidReminderState` TypedDict with LangGraph for workflow state:
 # Microsoft/Outlook
 MS_CLIENT_ID=your_microsoft_client_id
 MS_CLIENT_SECRET=your_microsoft_client_secret
-ENCRYPTED_REFRESH_TOKEN=encrypted_outlook_token
-ENCRYPTION_KEY=encryption_key_for_outlook
+MS_ENCRYPTED_REFRESH_TOKEN=encrypted_outlook_token
+MS_ENCRYPTION_KEY=encryption_key_for_outlook
 
 # Autodesk/BuildingConnected  
 AUTODESK_CLIENT_ID=your_autodesk_client_id
@@ -98,6 +107,9 @@ AUTODESK_ENCRYPTION_KEY=encryption_key_for_autodesk
 
 # Application
 DEFAULT_EMAIL_RECIPIENT=your-email@domain.com
+
+# Database (Required for email tracking)
+DATABASE_URL=postgresql://user:password@host:port/database
 ```
 
 ### Optional Configuration
@@ -126,22 +138,23 @@ The setup process creates local callback servers on ports 3333 (Microsoft) and 5
 ## Data Flow Architecture
 
 ```
-FastAPI REST API � LangGraph Workflow � Dual API Clients
-     �                    �                    �
-- /run-bid-reminder    State Machine      OAuth Token Managers
-- Health checks        Error routing      - MSGraphClient  
-- Graceful shutdown    LangSmith tracing  - BuildingConnectedClient
+FastAPI REST API � LangGraph Workflow � Dual API Clients � PostgreSQL Database
+     �                    �                    �                    �
+- /run-bid-reminder    State Machine      OAuth Token Managers    Email Tracking
+- Health checks        Error routing      - MSGraphClient         - AsyncPG Integration
+- Graceful shutdown    LangSmith tracing  - BuildingConnectedClient - Email Analytics
 ```
 
 ### Email Workflow
 1. **Project Query**: Fetch projects due in 5-10 days from BuildingConnected
 2. **Invitation Retrieval**: Get detailed bidding invitations for each project  
-3. **Email Generation**: Create personalized HTML emails with:
+3. **Email Generation**: Create personalized text emails using spyntax formatting with:
    - Contractor name and project details
-   - Bid deadline with urgency styling
-   - Direct "Access Bid Portal" button links
-   - Professional responsive HTML templates
+   - Bid deadline with clear formatting
+   - Direct bid portal links
+   - Clean, readable text format
 4. **Email Delivery**: Send via Microsoft Graph API with high importance
+5. **Database Logging**: Track all email attempts in PostgreSQL with comprehensive metadata
 
 ## Error Handling Strategy
 
@@ -166,7 +179,20 @@ Consider adding:
 - `pre-commit` hooks for automated quality checks
 
 ### Logging Strategy
-- Comprehensive logging to both console and `bid_reminder_agent.log`
+- Comprehensive logging to both console and `logs/bid_reminder_agent.log`
 - LangSmith integration for workflow tracing and debugging
 - Structured logging with timestamps and log levels
 - Security-conscious logging (no plain-text credentials)
+- **Database email tracking** via `EmailTracker` class with PostgreSQL persistence
+
+### Key Dependencies Added
+- `asyncpg==0.29.0` - High-performance PostgreSQL async driver
+- `psutil==5.9.0` - System monitoring and health checks
+
+### Database Schema
+The `email_tracking` table includes:
+- Project and bid package identifiers
+- Recipient details (name, email, company)
+- Email content metadata (title, links, due dates)
+- Delivery status and timestamp tracking
+- Analytics-ready structure for reporting

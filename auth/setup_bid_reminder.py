@@ -18,8 +18,8 @@ def check_environment_variables():
     outlook_vars = {
         'MS_CLIENT_ID': 'Microsoft Client ID',
         'MS_CLIENT_SECRET': 'Microsoft Client Secret',
-        'ENCRYPTED_REFRESH_TOKEN': 'Encrypted Refresh Token (Outlook)',
-        'ENCRYPTION_KEY': 'Encryption Key (Outlook)'
+        'MS_ENCRYPTED_REFRESH_TOKEN': 'Encrypted Refresh Token (Outlook)',
+        'MS_ENCRYPTION_KEY': 'Encryption Key (Outlook)'
     }
     
     # BuildingConnected variables
@@ -95,8 +95,8 @@ def setup_outlook_auth():
     # Check what's already configured
     client_id = os.getenv('MS_CLIENT_ID')
     client_secret = os.getenv('MS_CLIENT_SECRET')
-    encrypted_token = os.getenv('ENCRYPTED_REFRESH_TOKEN')
-    encryption_key = os.getenv('ENCRYPTION_KEY')
+    encrypted_token = os.getenv('MS_ENCRYPTED_REFRESH_TOKEN')
+    encryption_key = os.getenv('MS_ENCRYPTION_KEY')
     
     # If we have credentials but no tokens, run OAuth flow
     if client_id and client_secret and not (encrypted_token and encryption_key):
@@ -228,6 +228,13 @@ def test_configuration():
     print("━" * 50)
     
     try:
+        # Add parent directory to path for imports
+        import sys
+        import os
+        parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        if parent_dir not in sys.path:
+            sys.path.insert(0, parent_dir)
+        
         from bid_reminder_agent import BidReminderAgent
         import asyncio
         

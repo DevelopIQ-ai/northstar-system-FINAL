@@ -7,6 +7,7 @@ import asyncio
 import base64
 import json
 import os
+import logging
 from datetime import datetime, timezone
 from typing import Optional, Dict, Any
 
@@ -15,6 +16,13 @@ from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 from cryptography.hazmat.backends import default_backend
 from pydantic import BaseModel
 from dotenv import load_dotenv
+
+from sentry_config import (
+    set_auth_context, capture_exception_with_context,
+    add_breadcrumb, SentryOperations, SentryComponents, SentrySeverity
+)
+
+logger = logging.getLogger(__name__)
 
 # Load environment variables
 load_dotenv()
@@ -80,9 +88,14 @@ class TokenManager:
     
     async def get_access_token(self) -> str:
         """Get valid access token, refreshing if necessary"""
+        # Set auth context for token operations
+        auth_type = "microsoft_graph" if isinstance(self, MSGraphTokenManager) else "building_connected"
+        set_auth_context(auth_type, "get_access_token")
+        
         # Check if cached token is still valid (with 60 second buffer)
         if (self._cached_token and 
             datetime.now(timezone.utc).timestamp() * 1000 < self._cached_token.expires_at - 60_000):
+            logger.debug(f"🔑 Using cached token for {auth_type}")
             return self._cached_token.access_token
         
         # Use semaphore to prevent concurrent refresh attempts
@@ -93,6 +106,16 @@ class TokenManager:
                 return self._cached_token.access_token
             
             # Refresh token
+            logger.info(f"🔄 Refreshing {auth_type} token")
+            
+            add_breadcrumb(
+                message=f"Token refresh started for {auth_type}",
+                category="auth",
+                level="info",
+                data={"auth_type": auth_type, "flow_stage": "refresh_start"}
+            )
+            
+            set_auth_context(auth_type, "token_refresh")
             refresh_token = await self.decrypt_refresh_token()
             
             token_data = {
@@ -113,6 +136,8 @@ class TokenManager:
                 if response.status_code != 200:
                     error_details = f"Token refresh failed: {response.status_code} - {response.text}"
                     
+                    logger.error(f"❌ Token refresh failed for {auth_type}: {response.status_code}")
+                    
                     # For BuildingConnected, provide more specific error guidance
                     if isinstance(self, BuildingConnectedTokenManager) and "invalid_grant" in response.text:
                         error_details += "\n\nBuildingConnected refresh token has expired or been invalidated."
@@ -122,7 +147,22 @@ class TokenManager:
                         error_details += "\n3. User re-authenticated in another app"
                         error_details += "\n\nTo fix: Run 'python -c \"import asyncio; from auth.oauth_setup import setup_autodesk_auth_flow; asyncio.run(setup_autodesk_auth_flow())\"'"
                     
-                    raise ValueError(error_details)
+                    # Capture token refresh failure
+                    token_error = ValueError(error_details)
+                    capture_exception_with_context(
+                        token_error,
+                        operation=SentryOperations.TOKEN_REFRESH,
+                        component=SentryComponents.AUTH,
+                        severity=SentrySeverity.HIGH,
+                        extra_context={
+                            "auth_type": auth_type,
+                            "status_code": response.status_code,
+                            "flow_stage": "token_refresh",
+                            "is_invalid_grant": "invalid_grant" in response.text
+                        }
+                    )
+                    
+                    raise token_error
                 
                 token_response = response.json()
                 
@@ -137,14 +177,27 @@ class TokenManager:
                 )
                 
                 # Debug logging for token refresh
-                print(f"🔑 Token refresh successful for {self.__class__.__name__}")
-                print(f"   Access token: {self._cached_token.access_token[:20]}...")
-                print(f"   Expires at: {datetime.fromtimestamp(expires_at/1000)}")
+                logger.info(f"✅ Token refresh successful for {auth_type}")
+                logger.debug(f"   Access token: {self._cached_token.access_token[:20]}...")
+                logger.debug(f"   Expires at: {datetime.fromtimestamp(expires_at/1000)}")
+                
+                add_breadcrumb(
+                    message=f"Token refresh successful for {auth_type}",
+                    category="auth",
+                    level="info",
+                    data={
+                        "auth_type": auth_type,
+                        "flow_stage": "refresh_success",
+                        "new_refresh_token": bool(self._cached_token.refresh_token),
+                        "expires_at": datetime.fromtimestamp(expires_at/1000).isoformat()
+                    }
+                )
+                
                 if self._cached_token.refresh_token:
-                    print(f"   New refresh token provided: {self._cached_token.refresh_token[:20]}...")
-                    print(f"   Old refresh token was: {refresh_token[:20]}...")
+                    logger.debug(f"   New refresh token provided: {self._cached_token.refresh_token[:20]}...")
+                    logger.debug(f"   Old refresh token was: {refresh_token[:20]}...")
                 else:
-                    print("   No new refresh token provided")
+                    logger.debug("   No new refresh token provided")
                 
                 # Update stored refresh token if a new one was provided (Autodesk rotates refresh tokens)
                 if self._cached_token.refresh_token and self._cached_token.refresh_token != refresh_token:
@@ -157,6 +210,11 @@ class TokenManager:
     
     async def _update_stored_refresh_token(self, new_refresh_token: str) -> None:
         """Update the stored refresh token with new encrypted value"""
+        auth_type = "microsoft_graph" if isinstance(self, MSGraphTokenManager) else "building_connected"
+        set_auth_context(auth_type, "token_rotation")
+        
+        logger.info(f"🔄 Updating stored refresh token for {auth_type}")
+        
         try:
             # Encrypt the new refresh token
             encrypted_token = self._encrypt_token(new_refresh_token)
@@ -168,12 +226,23 @@ class TokenManager:
             if isinstance(self, BuildingConnectedTokenManager):
                 env_var = 'AUTODESK_ENCRYPTED_REFRESH_TOKEN'
             else:
-                env_var = 'ENCRYPTED_REFRESH_TOKEN'
+                env_var = 'MS_ENCRYPTED_REFRESH_TOKEN'
             
             # Log the token rotation for debugging
-            print(f"🔄 Token rotation: Updating {env_var} in .env file AND runtime environment")
-            print(f"   Old token: {self.encrypted_refresh_token[:20]}...")
-            print(f"   New token: {encrypted_token[:20]}...")
+            logger.info(f"🔄 Token rotation: Updating {env_var} in .env file AND runtime environment")
+            logger.debug(f"   Old token: {self.encrypted_refresh_token[:20]}...")
+            logger.debug(f"   New token: {encrypted_token[:20]}...")
+            
+            add_breadcrumb(
+                message=f"Token rotation for {auth_type}",
+                category="auth",
+                level="info",
+                data={
+                    "auth_type": auth_type,
+                    "flow_stage": "token_rotation",
+                    "env_var": env_var
+                }
+            )
             
             # Update .env file for persistence
             set_key('.env', env_var, encrypted_token)
@@ -186,11 +255,24 @@ class TokenManager:
             # Update instance variable
             self.encrypted_refresh_token = encrypted_token
             
-            print(f"✅ Token rotation completed for {env_var}")
+            logger.info(f"✅ Token rotation completed for {env_var}")
             
         except Exception as e:
             # Log the error but don't fail the token refresh
-            print(f"❌ Warning: Failed to update stored refresh token: {str(e)}")
+            logger.error(f"❌ Warning: Failed to update stored refresh token: {str(e)}")
+            
+            capture_exception_with_context(
+                e,
+                operation=SentryOperations.TOKEN_REFRESH,
+                component=SentryComponents.AUTH,
+                severity=SentrySeverity.MEDIUM,
+                extra_context={
+                    "auth_type": auth_type,
+                    "flow_stage": "token_rotation_failure",
+                    "operation": "update_stored_refresh_token"
+                }
+            )
+            
             import traceback
             traceback.print_exc()
     
@@ -300,8 +382,8 @@ def create_token_manager_from_env() -> MSGraphTokenManager:
     required_vars = [
         'MS_CLIENT_ID',
         'MS_CLIENT_SECRET', 
-        'ENCRYPTED_REFRESH_TOKEN',
-        'ENCRYPTION_KEY'
+        'MS_ENCRYPTED_REFRESH_TOKEN',
+        'MS_ENCRYPTION_KEY'
     ]
     
     missing_vars = [var for var in required_vars if not os.getenv(var)]
@@ -311,8 +393,8 @@ def create_token_manager_from_env() -> MSGraphTokenManager:
     return MSGraphTokenManager(
         client_id=os.getenv('MS_CLIENT_ID'),
         client_secret=os.getenv('MS_CLIENT_SECRET'),
-        encrypted_refresh_token=os.getenv('ENCRYPTED_REFRESH_TOKEN'),
-        encryption_key=os.getenv('ENCRYPTION_KEY')
+        encrypted_refresh_token=os.getenv('MS_ENCRYPTED_REFRESH_TOKEN'),
+        encryption_key=os.getenv('MS_ENCRYPTION_KEY')
     )
 
 

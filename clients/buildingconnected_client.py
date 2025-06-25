@@ -15,6 +15,7 @@ import httpx
 from pydantic import BaseModel, Field
 
 from auth.auth_helpers import TokenManager
+from sentry_config import set_api_client_context, add_breadcrumb
 
 logger = logging.getLogger(__name__)
 
@@ -285,6 +286,16 @@ class BuildingConnectedClient:
         Returns:
             ProjectsDueResponse with filtered projects and metadata
         """
+        # Set context for project query operation
+        set_api_client_context("building_connected", f"projects/due-in-{days}-days", "GET")
+        
+        add_breadcrumb(
+            message=f"Getting projects due in {days} days",
+            category="project_query",
+            level="info",
+            data={"days": days}
+        )
+        
         logger.info(f"📅 Getting projects due in {days} days")
         
         if not (0 <= days <= 365):
@@ -347,6 +358,19 @@ class BuildingConnectedClient:
             raise
         except Exception as e:
             logger.error(f"❌ Unexpected error filtering projects: {str(e)}")
+            
+            capture_exception_with_context(
+                e,
+                operation=SentryOperations.PROJECT_QUERY,
+                component=SentryComponents.CLIENT,
+                severity=SentrySeverity.HIGH,
+                extra_context={
+                    "api_client": "building_connected",
+                    "operation": "filter_projects_by_date",
+                    "days": days
+                }
+            )
+            
             raise BuildingConnectedError(500, f"Unexpected error filtering projects: {str(e)}")
     
     async def get_project_details(self, project_id: str) -> Optional[Project]:
@@ -432,6 +456,16 @@ class BuildingConnectedClient:
         Raises:
             ValueError: If project_id is empty, None, or not a string
         """
+        # Set context for invitation fetch operation
+        set_api_client_context("building_connected", f"projects/{project_id}/invitations", "GET")
+        
+        add_breadcrumb(
+            message=f"Getting bidding invitations for project {project_id}",
+            category="invitation_fetch",
+            level="info",
+            data={"project_id": project_id}
+        )
+        
         logger.info(f"🎯 Generating bidding invitations for project {project_id}")
         
         # Validate project_id
@@ -600,6 +634,17 @@ class BuildingConnectedClient:
             
             logger.info(f"🎯 Generated {len(all_invitation_data)} bidding invitation records")
             
+            add_breadcrumb(
+                message="Bidding invitations generated successfully",
+                category="invitation_fetch",
+                level="info",
+                data={
+                    "project_id": project_id,
+                    "invitations_count": len(all_invitation_data),
+                    "bid_packages_count": len(all_bid_packages)
+                }
+            )
+            
             # Log the raw invitation data for debugging
             logger.debug("=== BIDDING INVITATION DATA ===")
             for invitation in all_invitation_data:
@@ -612,4 +657,17 @@ class BuildingConnectedClient:
             raise
         except Exception as e:
             logger.error(f"❌ Unexpected error generating bidding invitations: {str(e)}")
+            
+            capture_exception_with_context(
+                e,
+                operation=SentryOperations.INVITATION_FETCH,
+                component=SentryComponents.CLIENT,
+                severity=SentrySeverity.HIGH,
+                extra_context={
+                    "api_client": "building_connected",
+                    "project_id": project_id,
+                    "operation": "generate_bidding_invitations"
+                }
+            )
+            
             raise BuildingConnectedError(500, f"Unexpected error generating bidding invitations: {str(e)}")
