@@ -200,7 +200,10 @@ class BidReminderAgent:
                 "building_client": None,
                 "email_tracker": None,
                 "error_message": f"Authentication failed: {str(e)}",
-                "workflow_successful": False
+                "workflow_successful": False,
+                "upcoming_projects": None,
+                "bidding_invitations": None,
+                "reminder_email_sent": False
             }
     
     @traceable(name="📋 Check Upcoming Projects", tags=["projects", "data-fetch"])
@@ -627,17 +630,27 @@ class BidReminderAgent:
         logger.info(f"Projects found: {len(upcoming_projects) if upcoming_projects else 0}")
         logger.info(f"Bidding invitations found: {len(bidding_invitations) if bidding_invitations else 0}")
         logger.info(f"Emails sent: {reminder_email_sent}")
-        for invitation in bidding_invitations:
-            logger.info(f"  - {invitation.firstName} {invitation.lastName} ({invitation.email}) - {invitation.bidPackageName}")
-            logger.info(f"  - {invitation.linkToBid}\n\n")
+        
+        # Only iterate if bidding_invitations is not None
+        if bidding_invitations:
+            for invitation in bidding_invitations:
+                logger.info(f"  - {invitation.firstName} {invitation.lastName} ({invitation.email}) - {invitation.bidPackageName}")
+                logger.info(f"  - {invitation.linkToBid}\n\n")
+        else:
+            logger.info("  - No bidding invitations to display")
+            
         logger.info(f"Error message: {error_message if error_message else 'None'}")
         
         if error_message:
-            result_message = f"❌ Workflow failed: {error_message}"
+            # Provide clear messaging for authentication failures
+            if "Authentication failed" in error_message or "authentication" in error_message.lower():
+                result_message = f"❌ Workflow stopped: Authentication failed. Please run 'python auth/setup_bid_reminder.py' to reconfigure authentication. Error: {error_message}"
+            else:
+                result_message = f"❌ Workflow failed: {error_message}"
             workflow_successful = False
             logger.error(f"Workflow failed with error: {error_message}")
         else:
-            project_count = len(upcoming_projects)
+            project_count = len(upcoming_projects) if upcoming_projects else 0
             invitation_count = len(bidding_invitations) if bidding_invitations else 0
             email_status = "✅ Emails sent successfully" if reminder_email_sent else "⚠️ No emails sent (no invitations found)"
             
