@@ -185,6 +185,11 @@ app.add_middleware(
 
 
 # API Models
+class BidReminderRequest(BaseModel):
+    """Bid reminder request model"""
+    projectId: Optional[str] = Field(None, description="Specific project ID to process (optional)")
+    daysOut: Optional[int] = Field(None, description="Override days until due for testing (optional)")
+
 class BidReminderResponse(BaseModel):
     """Bid reminder response model"""
     workflow_successful: bool = Field(..., description="Whether the workflow completed successfully")
@@ -193,6 +198,9 @@ class BidReminderResponse(BaseModel):
     projects_found: int = Field(0, description="Number of projects due in 5-10 days")
     email_sent: bool = Field(False, description="Whether reminder email was sent")
     timestamp: datetime = Field(default_factory=datetime.utcnow, description="Response timestamp")
+    # Add testing parameters to response for confirmation
+    test_project_id: Optional[str] = Field(None, description="Project ID used for testing")
+    test_days_out: Optional[int] = Field(None, description="Days out override used for testing")
 
 
 class HealthResponse(BaseModel):
@@ -799,14 +807,18 @@ async def health_check():
 
 
 @app.post("/run-bid-reminder", response_model=BidReminderResponse, summary="Run bid reminder workflow")
-async def run_bid_reminder_workflow():
+async def run_bid_reminder_workflow(request: BidReminderRequest = BidReminderRequest()):
     """
     Run the bid reminder workflow
     
     This endpoint:
-    1. Checks BuildingConnected for projects due in 5-10 days
-    2. Sends reminder email about those projects
+    1. Checks BuildingConnected for projects due in 5-10 days (or specific project if projectId provided)
+    2. Sends reminder email about those projects (using daysOut override if provided)
     3. Returns the results
+    
+    Optional parameters:
+    - projectId: Target specific project only
+    - daysOut: Override days calculation for testing (1, 2, 3, or 7)
     """
     # Create Sentry transaction for workflow monitoring
     with create_transaction(
@@ -824,8 +836,22 @@ async def run_bid_reminder_workflow():
         )
         
         try:
-            # Run the bid reminder workflow
-            result = await run_bid_reminder()
+            # Extract test parameters
+            project_id = request.projectId
+            days_out = request.daysOut
+            
+            # Log test parameters if provided
+            if project_id or days_out:
+                logger.info(f"🧪 Test mode activated - Project ID: {project_id}, Days Out: {days_out}")
+                add_breadcrumb(
+                    message="Test mode parameters provided",
+                    category="workflow",
+                    level="info",
+                    data={"project_id": project_id, "days_out": days_out}
+                )
+            
+            # Run the bid reminder workflow with test parameters
+            result = await run_bid_reminder(project_id=project_id, days_out=days_out)
         
             # Extract project count
             upcoming_projects = result.get("upcoming_projects", [])
@@ -851,7 +877,9 @@ async def run_bid_reminder_workflow():
                 result_message=result.get('result_message'),
                 error_message=result.get('error_message'),
                 projects_found=projects_found,
-                email_sent=result.get('reminder_email_sent', False)
+                email_sent=result.get('reminder_email_sent', False),
+                test_project_id=project_id,
+                test_days_out=days_out
             )
         
         except Exception as e:

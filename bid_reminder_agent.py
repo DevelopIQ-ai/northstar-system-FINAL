@@ -70,6 +70,10 @@ class BidReminderState(TypedDict):
     reminder_email_sent: bool
     email_tracker: Optional[EmailTracker]
     
+    # Test parameters
+    test_project_id: Optional[str]
+    test_days_out: Optional[int]
+    
     # Results
     error_message: Optional[str]
     workflow_successful: bool
@@ -79,13 +83,22 @@ class BidReminderState(TypedDict):
 class BidReminderAgent:
     """Simple agent that checks for upcoming bids and sends reminder emails"""
     
-    def __init__(self):
+    def __init__(self, test_project_id: Optional[str] = None, test_days_out: Optional[int] = None):
         self.default_recipient = os.getenv("DEFAULT_EMAIL_RECIPIENT", "kush@developiq.ai")
-        self.days_before_bid = [5, 6, 7, 8, 9, 10]  # Check 5-10 days before bid due
+        self.days_before_bid = [1, 2, 3, 7]
         self.run_start_time = datetime.now()
+        
+        # Test parameters
+        self.test_project_id = test_project_id
+        self.test_days_out = test_days_out
+        
         logger.info("BidReminderAgent initialized")
         logger.info(f"Default email recipient: {self.default_recipient}")
         logger.info(f"Days before bid to check: {self.days_before_bid}")
+        if test_project_id:
+            logger.info(f"🧪 Test mode - Target project ID: {test_project_id}")
+        if test_days_out:
+            logger.info(f"🧪 Test mode - Override days out: {test_days_out}")
     
     def _create_run_name(self, project_count: Optional[int] = None, success: bool = True) -> str:
         """Create descriptive run name for LangSmith"""
@@ -208,17 +221,27 @@ class BidReminderAgent:
     
     @traceable(name="📋 Check Upcoming Projects", tags=["projects", "data-fetch"])
     async def check_upcoming_projects_node(self, state: BidReminderState) -> BidReminderState:
-        """Check BuildingConnected for projects due in 5-10 days"""
+        """Check BuildingConnected for projects due in 5-10 days or specific project"""
         # Set workflow context for this node
         set_workflow_context("check_upcoming_projects")
         
+        test_project_id = state.get("test_project_id")
+        test_days_out = state.get("test_days_out")
+        
         logger.info("📋 Starting project check node")
+        if test_project_id:
+            logger.info(f"🧪 Test mode - Targeting specific project: {test_project_id}")
         
         add_breadcrumb(
             message="Project check started",
             category="workflow", 
             level="info",
-            data={"node": "check_upcoming_projects", "days_to_check": self.days_before_bid}
+            data={
+                "node": "check_upcoming_projects", 
+                "days_to_check": self.days_before_bid,
+                "test_project_id": test_project_id,
+                "test_days_out": test_days_out
+            }
         )
         
         if state.get("error_message"):
@@ -235,30 +258,64 @@ class BidReminderAgent:
             }
         
         try:
-            logger.info(f"Checking projects due in {self.days_before_bid} days")
-            # Get projects due in 5-10 days
-            all_upcoming_projects = []
-            
-            for days in self.days_before_bid:
-                logger.info(f"Fetching projects due in {days} days")
-                projects_response = await building_client.get_projects_due_in_n_days(days)
-                projects_count = len(projects_response.projects)
-                logger.info(f"Found {projects_count} projects due in {days} days")
-                all_upcoming_projects.extend(projects_response.projects)
+            if test_project_id:
+                # Test mode: Get specific project by ID
+                logger.info(f"🧪 Test mode - Fetching specific project: {test_project_id}")
+                try:
+                    # Get the specific project (we'll need to fetch all projects and filter)
+                    # Since BuildingConnected doesn't have a get-by-ID endpoint, we fetch recent projects
+                    all_projects_response = await building_client.get_all_projects(limit=100)
+                    target_project = None
+                    
+                    for project in all_projects_response:
+                        if project.id == test_project_id:
+                            target_project = project
+                            break
+                    
+                    if target_project:
+                        logger.info(f"✅ Found target project: {target_project.name}")
+                        unique_projects = [target_project]
+                    else:
+                        logger.error(f"❌ Project not found: {test_project_id}")
+                        return {
+                            **state,
+                            "upcoming_projects": [],
+                            "error_message": f"Project not found: {test_project_id}",
+                            "workflow_successful": False
+                        }
+                except Exception as e:
+                    logger.error(f"❌ Failed to fetch specific project {test_project_id}: {str(e)}")
+                    return {
+                        **state,
+                        "upcoming_projects": [],
+                        "error_message": f"Failed to fetch project {test_project_id}: {str(e)}",
+                        "workflow_successful": False
+                    }
+            else:
+                # Normal mode: Get projects due in specified days
+                logger.info(f"Checking projects due in {self.days_before_bid} days")
+                all_upcoming_projects = []
                 
-            logger.info(f"Total projects found across all days: {len(all_upcoming_projects)}")
-                
-            # Remove duplicates (same project might appear in multiple days)
-            logger.info("Removing duplicate projects")
-            unique_projects = []
-            seen_project_ids = set()
-            for project in all_upcoming_projects:
-                if project.id not in seen_project_ids:
-                    unique_projects.append(project)
-                    seen_project_ids.add(project.id)
-                    logger.debug(f"Added project: {project.name} (ID: {project.id})")
-                else:
-                    logger.debug(f"Skipped duplicate project: {project.name} (ID: {project.id})")
+                for days in self.days_before_bid:
+                    logger.info(f"Fetching projects due in {days} days")
+                    projects_response = await building_client.get_projects_due_in_n_days(days)
+                    projects_count = len(projects_response.projects)
+                    logger.info(f"Found {projects_count} projects due in {days} days")
+                    all_upcoming_projects.extend(projects_response.projects)
+                    
+                logger.info(f"Total projects found across all days: {len(all_upcoming_projects)}")
+                    
+                # Remove duplicates (same project might appear in multiple days)
+                logger.info("Removing duplicate projects")
+                unique_projects = []
+                seen_project_ids = set()
+                for project in all_upcoming_projects:
+                    if project.id not in seen_project_ids:
+                        unique_projects.append(project)
+                        seen_project_ids.add(project.id)
+                        logger.debug(f"Added project: {project.name} (ID: {project.id})")
+                    else:
+                        logger.debug(f"Skipped duplicate project: {project.name} (ID: {project.id})")
             
             logger.info(f"✅ Project check completed: {len(unique_projects)} unique projects found")
             
@@ -276,7 +333,8 @@ class BidReminderAgent:
                 data={
                     "node": "check_upcoming_projects",
                     "projects_found": len(unique_projects),
-                    "unique_projects": len(unique_projects)
+                    "unique_projects": len(unique_projects),
+                    "test_mode": bool(test_project_id)
                 }
             )
             
@@ -476,9 +534,21 @@ class BidReminderAgent:
                     # Find the associated project
                     project = project_lookup.get(invitation.projectId)
                     
-                    # Create personalized email
-                    email_subject = f"Bid Invitation: {invitation.bidPackageName}"
-                    email_body = self._create_personalized_invitation_email(invitation, project)
+                    # Determine project name for subject line
+                    project_name = project.name if project else invitation.bidPackageName
+                    
+                    # Calculate days until due for subject line (with override support)
+                    test_days_out = state.get("test_days_out")
+                    days_until_due = self._calculate_days_until_due(project, test_days_out)
+                    
+                    # Skip if not in allowed days (unless testing with override)
+                    if test_days_out is None and days_until_due not in [1, 2, 3, 7]:
+                        logger.info(f"⏭️  Skipping {invitation.email} - project due in {days_until_due} days (not in allowed list)")
+                        continue
+                    
+                    # Create personalized email with timeline-based subject line
+                    email_subject = await self._get_subject_line(invitation.bidPackageName, project_name, days_until_due, invitation, project, email_tracker)
+                    email_body = self._create_personalized_invitation_email(invitation, project, test_days_out)
                     
                     # Send email
                     send_response = await outlook_client.send_email(
@@ -758,39 +828,63 @@ class BidReminderAgent:
         return state
     
     def _get_greeting(self, first_name: str) -> str:
-        """Get a random greeting variation"""
+        """Get a random greeting variation based on specific day values"""
         # Handle empty or missing first names
-        if not first_name or first_name.strip() == "":
+        name_part = first_name if first_name and first_name.strip() else ""
+        
+        if name_part:
             greetings = [
-                "Hey there",
-                "Hi there",
-                "Hello",
-                "Good morning",
-                "Hope you're doing well",
-                "Greetings",
+                f"Hello {name_part},",
+                f"Hi {name_part},",
+                f"Good morning {name_part},",
+                f"Hey {name_part},"
             ]
         else:
             greetings = [
-                f"Hey {first_name}",
-                f"Hi {first_name}",
-                f"Hello {first_name}",
-                f"Good morning {first_name}",
-                f"Hope you're doing well {first_name}",
-                f"Hi there {first_name}",
+                "Hello there,",
+                "Hi there,",
+                "Good morning,"
             ]
         return random.choice(greetings)
     
-    def _get_intro(self, project_name: str, bid_package_name: str) -> str:
-        """Get a random intro variation"""
-        intros = [
-            f"I wanted to personally invite you to bid on our project, {project_name}, for the {bid_package_name} bid package.",
-            f"I'm reaching out to invite you to submit a bid for {project_name}, specifically for the {bid_package_name} package.",
-            f"We have an exciting opportunity for you to bid on {project_name} - the {bid_package_name} bid package.",
-            f"I'd love to have you consider bidding on our {project_name} project for the {bid_package_name} work.",
-            f"I'm personally inviting you to participate in our {project_name} project bidding for the {bid_package_name} package.",
-            f"We're looking for quality contractors to bid on {project_name}, and I think you'd be perfect for the {bid_package_name} work.",
-            f"I wanted to extend a personal invitation for you to bid on the {bid_package_name} package for our {project_name} project.",
-        ]
+    def _get_intro(self, project_name: str, bid_package_name: str, days_until_due: int) -> str:
+        """Get a random intro variation based on specific day values"""
+        
+        if days_until_due == 1:  # 1 day
+            intros = [
+                f"Just reaching out as a final notice for our project, {project_name}, for the {bid_package_name} bid package.",
+                f"This is a reminder of your last chance to bid on our project, {project_name}, for the {bid_package_name} bid package.",
+                f"This is a final notice for our project, {project_name}, for the {bid_package_name} bid package.",
+                f"I wanted to give you one last opportunity to bid on {project_name} for the {bid_package_name} work.",
+            ]
+        elif days_until_due == 2:  # 2 days
+            intros = [
+                f"Following up on our urgent bid opportunity for {project_name}, for the {bid_package_name} bid package.",
+                f"This is a time-sensitive bid request for our project, {project_name}, for the {bid_package_name} bid package.",
+                f"Reaching out about a last-minute opportunity for {project_name}, for the {bid_package_name} bid package.",
+                f"I wanted to follow up about the {bid_package_name} work on our {project_name} project.",
+            ]
+        elif days_until_due == 3:  # 3 days
+            intros = [
+                f"This is a quick turnaround bid opportunity for our project, {project_name}, for the {bid_package_name} bid package.",
+                f"Following up on a time-sensitive bid request for {project_name}, specifically for the {bid_package_name} package.",
+                f"This is a last-minute opportunity for our project, {project_name}, for the {bid_package_name} bid package.",
+                f"I wanted to reach out again about the {bid_package_name} work on {project_name}.",
+            ]
+        elif days_until_due == 7:  # 7 days
+            intros = [
+                f"I wanted to personally invite you to bid on our project, {project_name}, for the {bid_package_name} bid package.",
+                f"I'm reaching out to invite you to submit a bid for {project_name}, specifically for the {bid_package_name} package.",
+                f"We have an exciting opportunity for you to bid on {project_name} - the {bid_package_name} bid package.",
+                f"I'd like to invite you to participate in bidding for the {bid_package_name} work on our {project_name} project.",
+            ]
+        else:  # Any other number of days
+            intros = [
+                f"I'd like to invite you to bid on {project_name} for the {bid_package_name} package.",
+                f"Bid opportunity for {project_name} - {bid_package_name} work available.",
+                f"New project invitation: {project_name} - {bid_package_name} package.",
+                f"I wanted to reach out about a bidding opportunity for the {bid_package_name} work on {project_name}.",
+            ]
         return random.choice(intros)
     
     def _get_timing_info(self, days_until_due: int) -> str:
@@ -798,61 +892,187 @@ class BidReminderAgent:
         # Handle singular vs plural
         day_word = "day" if days_until_due == 1 else "days"
         
-        if days_until_due <= 5:
+        if days_until_due == 1:
             urgent_phrases = [
-                f"Bids are due in just {days_until_due} {day_word}",
-                f"The deadline is coming up fast - only {days_until_due} {day_word} left",
-                f"Time is running short with {days_until_due} {day_word} remaining",
-                f"We're down to {days_until_due} {day_word} until the bid deadline",
+                f"The bid deadline is tomorrow, so this is your final opportunity to submit.",
+                f"With bids due tomorrow, I wanted to give you one last chance to participate.",
+                f"Since the deadline is tomorrow, this is the final call for submissions.",
+                f"The bidding closes tomorrow, so please let me know if you can still participate.",
             ]
             return random.choice(urgent_phrases)
+        elif days_until_due == 2:
+            urgent_phrases = [
+                f"Bids are due in just 2 days, so time is getting tight.",
+                f"With only 2 days until the deadline, I wanted to follow up with you.",
+                f"The deadline is coming up quickly - we need submissions within 2 days.",
+                f"Time is running short with the bid due in 2 days.",
+            ]
+            return random.choice(urgent_phrases)
+        elif days_until_due == 3:
+            urgent_phrases = [
+                f"Bids are due in 3 days, so this is a quick turnaround opportunity.",
+                f"With 3 days until the deadline, I wanted to reach out again.",
+                f"The timeline is tight with bids due in 3 days.",
+                f"We're looking for submissions within the next 3 days.",
+            ]
+            return random.choice(urgent_phrases)
+        elif days_until_due == 7:
+            normal_phrases = [
+                f"Bids are due in one week, giving you a good window to prepare your submission.",
+                f"You have about a week to put together your bid - the deadline is in 7 days.",
+                f"The bidding deadline is next week, so you have time to review the details.",
+                f"We're looking for submissions within the next week.",
+            ]
+            return random.choice(normal_phrases)
         else:
             normal_phrases = [
-                f"Bids are due in {days_until_due} {day_word}",
-                f"You have {days_until_due} {day_word} to submit your bid",
-                f"The deadline is {days_until_due} {day_word} away",
-                f"We're looking for submissions within {days_until_due} {day_word}",
+                f"Bids are due in {days_until_due} {day_word}.",
+                f"You have {days_until_due} {day_word} to review the project and submit your bid.",
+                f"The deadline is {days_until_due} {day_word} away.",
+                f"We're looking for submissions within {days_until_due} {day_word}.",
             ]
             return random.choice(normal_phrases)
     
-    def _get_portal_access(self, link: str) -> str:
-        """Get a random portal access variation"""
-        portal_phrases = [
-            f"and you can access the portal here: {link}",
-            f" - you can find all the details and submit your bid at: {link}",
-            f" - the bid portal is available at: {link}",
-            f" - access the full project details and submit your bid here: {link}",
-            f" - all project documents and the bidding portal are at: {link}",
-            f" - you can review everything and submit your bid at: {link}",
-        ]
+    def _get_portal_access(self, link: str, days_until_due: int) -> str:
+        """Get a random portal access variation based on specific day values"""
+        
+        if days_until_due == 1:  # 1 day
+            portal_phrases = [
+                f"Please access the bidding portal immediately if you can still submit: {link}.",
+                f"If you're able to get a bid in by tomorrow, here's the portal link: {link}.",
+                f"The portal is still open until tomorrow if you can make it work: {link}.",
+                f"Final access to submit your bid before the deadline: {link}.",
+            ]
+        elif days_until_due == 2:  # 2 days
+            portal_phrases = [
+                f"If you can work with this tight timeline, please access the portal here: {link}.",
+                f"For those who can handle the quick turnaround, the bidding portal is: {link}.",
+                f"Please check out the portal if you think you can submit within 2 days: {link}.",
+                f"The project details and submission portal are available here: {link}.",
+            ]
+        elif days_until_due == 3:  # 3 days
+            portal_phrases = [
+                f"If this timeline works for you, please review the project details here: {link}.",
+                f"For those interested in this quick opportunity, the portal is: {link}.",
+                f"Please take a look at the project scope and requirements here: {link}.",
+                f"You can access all the bidding information and submit here: {link}.",
+            ]
+        elif days_until_due == 7:  # 7 days
+            portal_phrases = [
+                f"You can review all the project details and requirements here: {link}.",
+                f"The complete project information and bidding portal is available at: {link}.",
+                f"Please take a look when you have a chance - here's the portal link: {link}.",
+                f"All the specs and submission details can be found here: {link}.",
+            ]
+        else:  # Any other number of days
+            portal_phrases = [
+                f"You can review the project details and submit your bid here: {link}.",
+                f"The complete project information is available at: {link}.",
+                f"Please check out the portal when you get a chance: {link}.",
+                f"All the bidding details and submission portal are here: {link}.",
+            ]
         return random.choice(portal_phrases)
     
-    def _get_closing_sentiment(self) -> str:
-        """Get a random closing sentiment"""
-        closings = [
-            "I'm looking forward to potentially working with you!",
-            "Hope to see your bid come through!",
-            "Looking forward to your submission!",
-            "I'd be excited to work with you on this project!",
-            "Hope we can partner together on this one!",
-            "Looking forward to a great partnership!",
-            "Can't wait to see what you put together!",
-            "Hope this opportunity interests you!",
-        ]
+    def _get_closing_sentiment(self, days_until_due: int) -> str:
+        """Get a random closing sentiment based on specific day values"""
+        
+        if days_until_due == 1:  # 1 day
+            closings = [
+                "I know it's last minute, but hope you can still make it work.",
+                "Any chance you could pull together a quick bid for tomorrow's deadline?",
+                "If you can make this work on such short notice, that would be great.",
+                "Hope you can still participate despite the tight timing.",
+            ]
+        elif days_until_due == 2:  # 2 days
+            closings = [
+                "I know 2 days isn't much notice, but I wanted to give you the opportunity.",
+                "Hope you can handle the quick turnaround and submit something.",
+                "If you think you can make this timeline work, that would be fantastic.",
+                "I'd appreciate it if you could take a look and see if this works for you.",
+            ]
+        elif days_until_due == 3:  # 3 days
+            closings = [
+                "I know it's a quick timeline, but I wanted to reach out in case you could make it work.",
+                "Hope this could work with your schedule and you can submit a bid.",
+                "If you think this timeline is manageable, I'd love to see your submission.",
+                "I'd appreciate you taking a look to see if this opportunity fits.",
+            ]
+        elif days_until_due == 7:  # 7 days
+            closings = [
+                "Hope this looks like a good fit for your company.",
+                "I'd appreciate you taking a look at the project details.",
+                "Hope you'll consider submitting a bid for this opportunity.",
+                "Looking forward to potentially seeing your submission.",
+            ]
+        else:  # Any other number of days
+            closings = [
+                "Hope this opportunity looks interesting to you.",
+                "I'd appreciate you taking a look at the project details.",
+                "Hope you'll consider participating in this bidding opportunity.",
+                "Looking forward to potentially working together on this project.",
+            ]
         return random.choice(closings)
+    
+    async def _get_subject_line(self, bid_package_name: str, project_name: str, days_until_due: int, 
+                               invitation: BiddingInvitationData, project: Optional[Project], 
+                               email_tracker: Optional[EmailTracker]) -> str:
+        """Get email subject line based on specific day values"""
+        
+        # Generate subject line based on days until due
+        if days_until_due == 1:  # 1 day - Final Reminder
+            subjects = [
+                f"Final Reminder: {bid_package_name} - DUE TOMORROW!",
+                f"Final Reminder: {bid_package_name} Bid Closes Tomorrow!",
+                f"Final Reminder: {bid_package_name} - Last Chance!",
+                # Add your 1-day subject lines here
+            ]
+        elif days_until_due == 2:  # 2 days - Third Request
+            subjects = [
+                f"Third Request: {bid_package_name} - 2 days left!",
+                f"Third Request: {bid_package_name} Bid Due in 2 days",
+                f"Third Request: {bid_package_name} - {project_name}",
+                # Add your 2-day subject lines here
+            ]
+        elif days_until_due == 3:  # 3 days - Second Request
+            subjects = [
+                f"Second Request: {bid_package_name} Bid",
+                f"Second Request: {bid_package_name} - {project_name}",
+                f"Second Request: {bid_package_name} Opportunity",
+                # Add your 3-day subject lines here
+            ]
+        elif days_until_due == 7:  # 7 days - Generic/First Request
+            subjects = [
+                f"Bid Invitation: {bid_package_name} - {project_name}",
+                f"New Bid Opportunity: {bid_package_name}",
+                f"Project Invitation: {bid_package_name} Work",
+                # Add your 7-day subject lines here
+            ]
+        else:  # Any other number of days - Generic
+            subjects = [
+                f"Bid Opportunity: {bid_package_name}",
+                f"Project Bid: {bid_package_name} - {project_name}",
+                f"New Opportunity: {bid_package_name} Work",
+                # Add your default subject lines here
+            ]
+        return random.choice(subjects)
     
     def _get_signature(self) -> str:
         """Get Paul Herndon's email signature with links"""
         return """Best regards,
-<br /><br />
+<br><br>
 <strong>Paul Herndon</strong><br>
-<a href="tel:+12819353863">281-935-3863</a>
+<a href="tel:+12819353863">281-935-3863</a><br>
 
 <strong>Offices:</strong> <a href="https://maps.google.com/?q=Houston,TX">Houston</a> | <a href="https://maps.google.com/?q=San Antonio,TX">San Antonio</a><br>
 <strong>Website:</strong> <a href="https://www.buildncs.com">www.buildncs.com</a>"""
     
-    def _calculate_days_until_due(self, project: Optional[Project]) -> int:
-        """Calculate days until bid is due"""
+    def _calculate_days_until_due(self, project: Optional[Project], override_days: Optional[int] = None) -> int:
+        """Calculate days until bid is due (or use override for testing)"""
+        # Use override if provided (for testing)
+        if override_days is not None:
+            logger.info(f"🧪 Using days override: {override_days}")
+            return override_days
+        
         if not project or not project.bidsDueAt:
             return 7  # Default fallback
         
@@ -863,21 +1083,21 @@ class BidReminderAgent:
         except:
             return 7  # Default fallback
     
-    def _create_personalized_invitation_email(self, invitation: BiddingInvitationData, project: Optional[Project]) -> str:
+    def _create_personalized_invitation_email(self, invitation: BiddingInvitationData, project: Optional[Project], override_days: Optional[int] = None) -> str:
         """Create personalized HTML email for bidding invitation using random variations"""
         
         # Determine project name - use bid package name as fallback
         project_name = project.name if project else invitation.bidPackageName
         
-        # Calculate days until due
-        days_until_due = self._calculate_days_until_due(project)
+        # Calculate days until due (with override support)
+        days_until_due = self._calculate_days_until_due(project, override_days)
         
-        # Build the email using random variations
+        # Build the email using random variations based on timeline
         greeting = self._get_greeting(invitation.firstName)
-        intro = self._get_intro(project_name, invitation.bidPackageName)
+        intro = self._get_intro(project_name, invitation.bidPackageName, days_until_due)
         timing = self._get_timing_info(days_until_due)
-        portal_access = self._get_portal_access(invitation.linkToBid)
-        closing = self._get_closing_sentiment()
+        portal_access = self._get_portal_access(invitation.linkToBid, days_until_due)
+        closing = self._get_closing_sentiment(days_until_due)
         signature = self._get_signature()
         
         # Create HTML email with proper formatting
@@ -893,7 +1113,7 @@ class BidReminderAgent:
 </head>
 <body>
     <div class="email-content">
-        <p>{greeting},</p>
+        <p>{greeting}</p>
 
         <p>{intro}</p>
 
@@ -1028,44 +1248,46 @@ class BidReminderAgent:
             
             graph = self.build_graph()
         
-        # Initial state
-        logger.info("Initializing workflow state")
-        initial_state: BidReminderState = {
-            "outlook_token_manager": None,
-            "building_token_manager": None,
-            "outlook_client": None,
-            "building_client": None,
-            "upcoming_projects": None,
-            "bidding_invitations": None,
-            "reminder_email_sent": False,
-            "email_tracker": None,
-            "error_message": None,
-            "workflow_successful": False,
-            "result_message": None
-        }
-        logger.info("✅ Initial state created")
-        
-        # Execute workflow with enhanced tracing
-        logger.info("🔄 Executing LangGraph workflow...")
-        config = {}
-        if os.getenv("LANGSMITH_TRACING") == "true" and os.getenv("LANGSMITH_API_KEY"):
-            # Create enhanced run configuration
-            run_name = self._create_run_name()
-            metadata = self._create_run_metadata()
-            
-            config = {
-                "configurable": {
-                    "thread_id": f"bid-reminder-{self.run_start_time.strftime('%Y%m%d-%H%M%S')}"
-                },
-                "tags": ["bid-reminder", "langgraph", "automation"],
-                "metadata": metadata,
-                "run_name": run_name
+            # Initial state
+            logger.info("Initializing workflow state")
+            initial_state: BidReminderState = {
+                "outlook_token_manager": None,
+                "building_token_manager": None,
+                "outlook_client": None,
+                "building_client": None,
+                "upcoming_projects": None,
+                "bidding_invitations": None,
+                "reminder_email_sent": False,
+                "email_tracker": None,
+                "test_project_id": self.test_project_id,
+                "test_days_out": self.test_days_out,
+                "error_message": None,
+                "workflow_successful": False,
+                "result_message": None
             }
-            logger.info(f"🔍 Enhanced LangSmith tracing enabled: {run_name}")
-        
+            logger.info("✅ Initial state created")
+            
+            # Execute workflow with enhanced tracing
+            logger.info("🔄 Executing LangGraph workflow...")
+            config = {}
+            if os.getenv("LANGSMITH_TRACING") == "true" and os.getenv("LANGSMITH_API_KEY"):
+                # Create enhanced run configuration
+                run_name = self._create_run_name()
+                metadata = self._create_run_metadata()
+                
+                config = {
+                    "configurable": {
+                        "thread_id": f"bid-reminder-{self.run_start_time.strftime('%Y%m%d-%H%M%S')}"
+                    },
+                    "tags": ["bid-reminder", "langgraph", "automation"],
+                    "metadata": metadata,
+                    "run_name": run_name
+                }
+                logger.info(f"🔍 Enhanced LangSmith tracing enabled: {run_name}")
+            
             result = await graph.ainvoke(initial_state, config=config)
             logger.info("✅ Workflow execution completed")
-            
+                
             # Set transaction data
             transaction.set_data("workflow_successful", result.get('workflow_successful', False))
             transaction.set_data("projects_found", len(result.get('upcoming_projects', [])))
@@ -1098,10 +1320,12 @@ class BidReminderAgent:
 
 
 # Convenience function
-async def run_bid_reminder() -> dict:
-    """Simple function to run bid reminder workflow"""
+async def run_bid_reminder(project_id: Optional[str] = None, days_out: Optional[int] = None) -> dict:
+    """Simple function to run bid reminder workflow with optional test parameters"""
     logger.info("📞 Called run_bid_reminder() convenience function")
-    agent = BidReminderAgent()
+    if project_id or days_out:
+        logger.info(f"🧪 Test mode - Project ID: {project_id}, Days Out: {days_out}")
+    agent = BidReminderAgent(test_project_id=project_id, test_days_out=days_out)
     return await agent.run_bid_reminder_workflow()
 
 
