@@ -6,6 +6,7 @@ Checks BuildingConnected for projects due in 5-10 days and sends reminder emails
 import os
 import logging
 import random
+import html
 from typing import Optional, List
 from datetime import datetime
 
@@ -86,6 +87,7 @@ class BidReminderAgent:
     def __init__(self, test_project_id: Optional[str] = None, test_days_out: Optional[int] = None):
         self.default_recipient = os.getenv("DEFAULT_EMAIL_RECIPIENT", "kush@developiq.ai")
         self.days_before_bid = [1, 2, 3, 7]
+        self.urgency_threshold_days = int(os.getenv("URGENCY_THRESHOLD_DAYS", "5"))  # Days at which messages become urgent
         self.run_start_time = datetime.now()
         
         # Test parameters
@@ -95,6 +97,7 @@ class BidReminderAgent:
         logger.info("BidReminderAgent initialized")
         logger.info(f"Default email recipient: {self.default_recipient}")
         logger.info(f"Days before bid to check: {self.days_before_bid}")
+        logger.info(f"Urgency threshold: {self.urgency_threshold_days} days")
         if test_project_id:
             logger.info(f"🧪 Test mode - Target project ID: {test_project_id}")
         if test_days_out:
@@ -1080,21 +1083,24 @@ class BidReminderAgent:
             due_date = datetime.fromisoformat(project.bidsDueAt.replace('Z', '+00:00'))
             days_diff = (due_date.date() - datetime.now().date()).days
             return max(1, days_diff)  # Ensure at least 1 day
-        except:
+        except (ValueError, TypeError, AttributeError) as e:
+            logger.warning(f"Failed to parse bid due date '{project.bidsDueAt}': {e}")
             return 7  # Default fallback
     
     def _create_personalized_invitation_email(self, invitation: BiddingInvitationData, project: Optional[Project], override_days: Optional[int] = None) -> str:
         """Create personalized HTML email for bidding invitation using random variations"""
         
-        # Determine project name - use bid package name as fallback
-        project_name = project.name if project else invitation.bidPackageName
+        # Determine project name - use bid package name as fallback and escape HTML
+        project_name = html.escape(project.name if project else invitation.bidPackageName)
+        bid_package_name = html.escape(invitation.bidPackageName)
+        first_name = html.escape(invitation.firstName or "")
         
         # Calculate days until due (with override support)
         days_until_due = self._calculate_days_until_due(project, override_days)
         
         # Build the email using random variations based on timeline
-        greeting = self._get_greeting(invitation.firstName)
-        intro = self._get_intro(project_name, invitation.bidPackageName, days_until_due)
+        greeting = self._get_greeting(first_name)
+        intro = self._get_intro(project_name, bid_package_name, days_until_due)
         timing = self._get_timing_info(days_until_due)
         portal_access = self._get_portal_access(invitation.linkToBid, days_until_due)
         closing = self._get_closing_sentiment(days_until_due)
