@@ -4,7 +4,7 @@ Ported from TypeScript implementation for direct API access
 """
 
 import logging
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any, List, Union
 from enum import Enum
 
 import httpx
@@ -221,7 +221,7 @@ class MSGraphClient:
         body: str,
         cc: Optional[str] = None,
         bcc: Optional[str] = None,
-        importance: EmailImportance = EmailImportance.NORMAL,
+        importance: Union[EmailImportance, str] = EmailImportance.NORMAL,
         save_to_sent_items: bool = True
     ) -> SendEmailResponse:
         """
@@ -239,6 +239,14 @@ class MSGraphClient:
         Returns:
             SendEmailResponse with success status and details
         """
+        # Normalize importance parameter (handle both string and enum values)
+        if isinstance(importance, str):
+            try:
+                importance = EmailImportance(importance)
+            except ValueError:
+                logger.warning(f"Invalid importance value '{importance}', using 'normal'")
+                importance = EmailImportance.NORMAL
+        
         # Set context for email sending operation
         set_api_client_context("microsoft_graph", "sendMail", "POST")
         

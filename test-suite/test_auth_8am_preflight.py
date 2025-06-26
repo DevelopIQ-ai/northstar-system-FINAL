@@ -47,7 +47,7 @@ from auth.auth_helpers import (
     create_token_manager_from_env,
     create_buildingconnected_token_manager_from_env
 )
-from clients.graph_api_client import MSGraphClient
+from clients.graph_api_client import MSGraphClient, EmailImportance
 from clients.buildingconnected_client import BuildingConnectedClient
 
 load_dotenv()
@@ -342,7 +342,7 @@ class PreFlightChecker:
                 to=default_recipient,
                 subject=test_subject,
                 body=test_body,
-                importance="normal"
+                importance=EmailImportance.NORMAL
             )
             
             execution_time = int((datetime.now() - start_time).total_seconds() * 1000)
