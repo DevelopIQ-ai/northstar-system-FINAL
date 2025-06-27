@@ -86,7 +86,7 @@ class BidReminderAgent:
     
     def __init__(self, test_project_id: Optional[str] = None, test_days_out: Optional[int] = None):
         self.default_recipient = os.getenv("DEFAULT_EMAIL_RECIPIENT", "kush@developiq.ai")
-        self.days_before_bid = [1, 2, 3, 7]
+        self.days_before_bid = [0, 1, 2, 3, 7]
         self.urgency_threshold_days = int(os.getenv("URGENCY_THRESHOLD_DAYS", "5"))  # Days at which messages become urgent
         self.run_start_time = datetime.now()
         
@@ -545,7 +545,7 @@ class BidReminderAgent:
                     days_until_due = self._calculate_days_until_due(project, test_days_out)
                     
                     # Skip if not in allowed days (unless testing with override)
-                    if test_days_out is None and days_until_due not in [1, 2, 3, 7]:
+                    if test_days_out is None and days_until_due not in self.days_before_bid:
                         logger.info(f"⏭️  Skipping {invitation.email} - project due in {days_until_due} days (not in allowed list)")
                         continue
                     
@@ -853,7 +853,14 @@ class BidReminderAgent:
     def _get_intro(self, project_name: str, bid_package_name: str, days_until_due: int) -> str:
         """Get a random intro variation based on specific day values"""
         
-        if days_until_due == 1:  # 1 day
+        if days_until_due == 0:  # 0 days
+            intros = [
+                f"Just reaching out as a final notice for our project, {project_name}, for the {bid_package_name} bid package.",
+                f"This is a reminder of your last chance to bid on our project, {project_name}, for the {bid_package_name} bid package.",
+                f"This is a final notice for our project, {project_name}, for the {bid_package_name} bid package.",
+                f"I wanted to give you one last opportunity to bid on {project_name} for the {bid_package_name} work.",
+            ]
+        elif days_until_due == 1:  # 1 day
             intros = [
                 f"Just reaching out as a final notice for our project, {project_name}, for the {bid_package_name} bid package.",
                 f"This is a reminder of your last chance to bid on our project, {project_name}, for the {bid_package_name} bid package.",
@@ -894,8 +901,15 @@ class BidReminderAgent:
         """Get a random timing information variation"""
         # Handle singular vs plural
         day_word = "day" if days_until_due == 1 else "days"
-        
-        if days_until_due == 1:
+        if days_until_due == 0:
+            urgent_phrases = [
+                f"The bid deadline is TODAY, so this is your final opportunity to submit.",
+                f"With bids due TODAY, I wanted to give you one last chance to participate.",
+                f"Since the deadline is TODAY, this is the final call for submissions.",
+                f"The bidding closes TODAY, so please let me know if you can still participate.",
+            ]
+            return random.choice(urgent_phrases)
+        elif days_until_due == 1:
             urgent_phrases = [
                 f"The bid deadline is tomorrow, so this is your final opportunity to submit.",
                 f"With bids due tomorrow, I wanted to give you one last chance to participate.",
@@ -939,7 +953,14 @@ class BidReminderAgent:
     def _get_portal_access(self, link: str, days_until_due: int) -> str:
         """Get a random portal access variation based on specific day values"""
         
-        if days_until_due == 1:  # 1 day
+        if days_until_due == 0:  # 0 days
+            portal_phrases = [
+                f"Please access the bidding portal immediately if you can still submit: {link}.",
+                f"If you're able to get a bid in by TODAY, here's the portal link: {link}.",
+                f"The portal is still open until TODAY if you can make it work: {link}.",
+                f"Final access to submit your bid before the deadline: {link}.",
+            ]
+        elif days_until_due == 1:  # 1 day
             portal_phrases = [
                 f"Please access the bidding portal immediately if you can still submit: {link}.",
                 f"If you're able to get a bid in by tomorrow, here's the portal link: {link}.",
@@ -979,7 +1000,14 @@ class BidReminderAgent:
     def _get_closing_sentiment(self, days_until_due: int) -> str:
         """Get a random closing sentiment based on specific day values"""
         
-        if days_until_due == 1:  # 1 day
+        if days_until_due == 0:  # 0 days
+            closings = [
+                "I know it's last minute, but hope you can still make it work.",
+                "Any chance you could pull together a quick bid for today's deadline?",
+                "If you can make this work on such short notice, that would be great.",
+                "Hope you can still participate despite the tight timing.",
+            ]
+        elif days_until_due == 1:  # 1 day
             closings = [
                 "I know it's last minute, but hope you can still make it work.",
                 "Any chance you could pull together a quick bid for tomorrow's deadline?",
@@ -1022,7 +1050,14 @@ class BidReminderAgent:
         """Get email subject line based on specific day values"""
         
         # Generate subject line based on days until due
-        if days_until_due == 1:  # 1 day - Final Reminder
+        if days_until_due == 0:  # 0 days - Final Reminder
+            subjects = [
+                f"Final Reminder: {bid_package_name} - DUE TODAY!",
+                f"Final Reminder: {bid_package_name} Bid Closes Today!",
+                f"Final Reminder: {bid_package_name} - Last Chance!",
+                # Add your 0-day subject lines here
+            ]
+        elif days_until_due == 1:  # 1 day - Final Reminder
             subjects = [
                 f"Final Reminder: {bid_package_name} - DUE TOMORROW!",
                 f"Final Reminder: {bid_package_name} Bid Closes Tomorrow!",
