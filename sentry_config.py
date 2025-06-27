@@ -5,8 +5,10 @@ Provides enhanced logging, tagging, and error tracking across all components
 
 import os
 import logging
+import threading
 from typing import Optional, Dict, Any, List
 from datetime import datetime
+from contextlib import contextmanager
 
 import sentry_sdk
 from sentry_sdk.integrations.fastapi import FastApiIntegration
@@ -14,6 +16,10 @@ from sentry_sdk.integrations.starlette import StarletteIntegration
 from sentry_sdk.integrations.logging import LoggingIntegration
 from sentry_sdk.integrations.asyncio import AsyncioIntegration
 from sentry_sdk.integrations.httpx import HttpxIntegration
+
+# Global flag to track test execution mode
+_test_mode_lock = threading.Lock()
+_test_execution_active = False
 
 
 class SentryOperations:
@@ -111,6 +117,69 @@ def init_sentry(component: str = "unknown") -> bool:
 
 def _before_send_filter(event: Dict[str, Any], hint: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     """Filter events before sending to Sentry"""
+    # Check if we're in test execution mode and suppress expected test errors
+    if _test_execution_active:
+        # During test execution, only allow critical unexpected errors through
+        # Suppress expected test errors but allow genuine test suite crashes
+        
+        # Check if this is a test-related error (expected)
+        event_message = str(event.get('message', ''))
+        if event.get('exception'):
+            for exception in event['exception'].get('values', []):
+                exception_type = exception.get('type', '').lower()
+                exception_value = str(exception.get('value', '')).lower()
+                
+                # Suppress expected test errors
+                expected_test_errors = [
+                    'graphapierror',        # Expected API errors in tests
+                    'buildingconnectederror', # Expected BC errors in tests  
+                    'httpxerror',           # Expected network errors in tests
+                    'timeoutexception',     # Expected timeout errors in tests
+                    'connecterror',         # Expected connection errors in tests
+                    'sslerror',             # Expected SSL errors in tests
+                    'invalidgrant',         # Expected auth errors in tests
+                    'unauthorized',         # Expected 401 errors in tests
+                    'forbidden',            # Expected 403 errors in tests
+                    'notfound',            # Expected 404 errors in tests
+                    'toolarge',            # Expected 413 errors in tests
+                    'ratelimit',           # Expected 429 errors in tests
+                    'jsondecodeerror'      # Expected JSON errors in tests
+                ]
+                
+                if any(error_type in exception_type or error_type in exception_value 
+                       for error_type in expected_test_errors):
+                    return None
+        
+        # Also check message content for test-related suppressions
+        test_suppressions = [
+            'test setup failed',
+            'mock',
+            'expected error',
+            'validation test',
+            'edge case test',
+            'tampering test',
+            'concurrent test'
+        ]
+        
+        if any(suppression in event_message.lower() for suppression in test_suppressions):
+            return None
+        
+        # Allow critical test suite crashes through (these are real problems)
+        if event.get('level') in ['fatal', 'error']:
+            # Check if this looks like a genuine test suite failure
+            critical_errors = [
+                'test suite crashed',
+                'failed to initialize',
+                'import error',
+                'syntax error',
+                'module not found',
+                'unhandled exception in test runner'
+            ]
+            
+            if any(critical in event_message.lower() for critical in critical_errors):
+                # This is a real problem with the test suite itself
+                return event
+    
     # Don't send debug level events
     if event.get('level') == 'debug':
         return None
@@ -378,3 +447,91 @@ def set_auth_context(auth_type: str, flow_stage: str) -> None:
             "flow_stage": flow_stage
         }
     )
+
+
+# Test mode control functions
+@contextmanager
+def suppress_test_errors():
+    """
+    Context manager to suppress expected test errors in Sentry during test execution.
+    
+    Usage:
+        with suppress_test_errors():
+            # Run test suite - expected test errors will be suppressed
+            await run_test_suite()
+        # After context exits, normal Sentry error reporting resumes
+    """
+    global _test_execution_active
+    
+    with _test_mode_lock:
+        _test_execution_active = True
+    
+    try:
+        # Add breadcrumb to indicate test mode started
+        add_breadcrumb(
+            message="Test execution mode activated - suppressing expected test errors",
+            category="test_mode",
+            level="info",
+            data={"test_mode": "activated"}
+        )
+        yield
+    finally:
+        with _test_mode_lock:
+            _test_execution_active = False
+        
+        # Add breadcrumb to indicate test mode ended
+        add_breadcrumb(
+            message="Test execution mode deactivated - resuming normal error reporting",
+            category="test_mode", 
+            level="info",
+            data={"test_mode": "deactivated"}
+        )
+
+
+def is_test_mode_active() -> bool:
+    """
+    Check if test execution mode is currently active.
+    
+    Returns:
+        bool: True if test mode is active, False otherwise
+    """
+    return _test_execution_active
+
+
+def force_capture_test_error(
+    exception: Exception,
+    test_name: str,
+    test_suite: str,
+    severity: str = SentrySeverity.CRITICAL
+) -> str:
+    """
+    Force capture a test error even in test mode (for genuine test suite failures).
+    
+    Args:
+        exception: The exception that occurred
+        test_name: The name of the test that failed
+        test_suite: The test suite that was running
+        severity: The severity of the error
+    
+    Returns:
+        str: The Sentry event ID
+    """
+    with sentry_sdk.configure_scope() as scope:
+        # Set test failure context
+        scope.set_tag("test_mode", "force_capture")
+        scope.set_tag("test_name", test_name)
+        scope.set_tag("test_suite", test_suite)
+        scope.set_tag("failure_type", "test_suite_failure")
+        
+        # Set detailed context
+        scope.set_context("test_failure_details", {
+            "test_name": test_name,
+            "test_suite": test_suite,
+            "error_type": type(exception).__name__,
+            "error_message": str(exception),
+            "test_mode_active": _test_execution_active,
+            "timestamp": datetime.utcnow().isoformat()
+        })
+        
+        # Force capture regardless of test mode
+        return sentry_sdk.capture_exception(exception)

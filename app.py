@@ -18,7 +18,8 @@ import sentry_sdk
 from sentry_config import (
     init_sentry, set_health_check_context, capture_exception_with_context,
     capture_message_with_context, add_breadcrumb, create_transaction,
-    SentryOperations, SentryComponents, SentrySeverity
+    SentryOperations, SentryComponents, SentrySeverity, suppress_test_errors,
+    force_capture_test_error
 )
 
 from fastapi import FastAPI, HTTPException, status, Request, Response
@@ -676,9 +677,42 @@ async def health_check():
             )
             
             set_health_check_context("test_suite", "running")
-            test_results = await run_comprehensive_test_suite()
-            test_results_summary = test_results
-            test_suite_executed = True
+            
+            # Suppress expected test errors during test execution
+            try:
+                with suppress_test_errors():
+                    logger.info("🔇 Test mode activated - suppressing expected test errors")
+                    test_results = await run_comprehensive_test_suite()
+                    logger.info("🔊 Test mode deactivated - resuming normal error reporting")
+                
+                test_results_summary = test_results
+                test_suite_executed = True
+            except Exception as test_suite_error:
+                # This is a genuine test suite failure (not an expected test error)
+                logger.error(f"💥 Test suite crashed unexpectedly: {test_suite_error}")
+                
+                # Force capture this error even though we're in test mode
+                force_capture_test_error(
+                    test_suite_error,
+                    test_name="comprehensive_test_suite",
+                    test_suite="health_check_test_runner"
+                )
+                
+                # Create a failure summary
+                test_results_summary = {
+                    "execution_timestamp": datetime.utcnow().isoformat(),
+                    "test_suites": {},
+                    "overall_summary": {
+                        "overall_status": "CRITICAL_FAILURE",
+                        "total_tests": 0,
+                        "total_passed": 0,
+                        "total_failed": 1,
+                        "critical_failures": 1,
+                        "pass_rate": 0,
+                        "error": f"Test suite crashed: {str(test_suite_error)}"
+                    }
+                }
+                test_suite_executed = False
             
             # Send email report of test results
             try:
