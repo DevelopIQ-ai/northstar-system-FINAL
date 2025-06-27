@@ -296,4 +296,56 @@ class EmailTracker:
                 }
             )
             
+            return []
+    
+    async def get_email_attempts_for_contact(self, email: str, project_id: str) -> List[Dict[str, Any]]:
+        """Get previous email attempts for a specific contact and project"""
+        # Set database context for email attempts query
+        set_database_context("select", "email_tracking")
+        
+        add_breadcrumb(
+            message=f"Getting email attempts for contact and project",
+            category="database",
+            level="info",
+            data={
+                "operation": "get_email_attempts",
+                "table": "email_tracking",
+                "email": email,
+                "project_id": project_id
+            }
+        )
+        
+        logger.debug(f"📋 Getting email attempts for {email} on project {project_id}")
+        
+        try:
+            conn = await asyncpg.connect(self.database_url)
+            
+            attempts_sql = """
+            SELECT * FROM email_tracking
+            WHERE email = $1 AND projectid = $2
+            ORDER BY sentat DESC;
+            """
+            
+            rows = await conn.fetch(attempts_sql, email, project_id)
+            await conn.close()
+            
+            logger.debug(f"Found {len(rows)} previous email attempts for {email} on project {project_id}")
+            return [dict(row) for row in rows]
+            
+        except Exception as e:
+            logger.error(f"❌ Failed to get email attempts for contact: {str(e)}")
+            
+            capture_exception_with_context(
+                e,
+                operation=SentryOperations.DATABASE_OPERATION,
+                component=SentryComponents.DATABASE,
+                severity=SentrySeverity.MEDIUM,
+                extra_context={
+                    "db_operation": "get_email_attempts_for_contact",
+                    "table": "email_tracking",
+                    "email": email,
+                    "project_id": project_id
+                }
+            )
+            
             return [] 
