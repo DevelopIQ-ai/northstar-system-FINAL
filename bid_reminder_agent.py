@@ -26,21 +26,42 @@ from functools import wraps
 
 def conditional_traceable(name: str, tags: List[str] = None):
     """
-    Conditional decorator that only applies @traceable in production or when explicitly enabled.
+    Conditional decorator that applies @traceable except during test execution.
     Prevents mock traces from polluting LangSmith dashboard during tests.
+    Always traces real workflows, never traces mock test runs.
     """
     def decorator(func):
-        # Check environment and tracing settings
-        environment = os.getenv("ENVIRONMENT", "development").lower()
-        langsmith_enabled = os.getenv("LANGSMITH_TRACING") == "true" and os.getenv("LANGSMITH_API_KEY")
-        is_production = environment == "production"
+        # Import here to avoid circular imports
+        from sentry_config import is_test_mode_active
         
-        # Only apply @traceable in production OR when explicitly enabled in dev
-        if is_production or langsmith_enabled:
-            return traceable(name=name, tags=tags or [])(func)
+        @wraps(func)
+        async def async_wrapper(*args, **kwargs):
+            # Check if we're in test mode - if so, skip tracing
+            if is_test_mode_active():
+                # Skip tracing during test execution (mocks)
+                return await func(*args, **kwargs)
+            else:
+                # Apply normal tracing for real workflows
+                traced_func = traceable(name=name, tags=tags or [])(func)
+                return await traced_func(*args, **kwargs)
+        
+        @wraps(func)
+        def sync_wrapper(*args, **kwargs):
+            # Check if we're in test mode - if so, skip tracing
+            if is_test_mode_active():
+                # Skip tracing during test execution (mocks)
+                return func(*args, **kwargs)
+            else:
+                # Apply normal tracing for real workflows
+                traced_func = traceable(name=name, tags=tags or [])(func)
+                return traced_func(*args, **kwargs)
+        
+        # Return async wrapper for async functions, sync wrapper for sync functions
+        import asyncio
+        if asyncio.iscoroutinefunction(func):
+            return async_wrapper
         else:
-            # Return function unchanged (no tracing)
-            return func
+            return sync_wrapper
     
     return decorator
 
@@ -1333,13 +1354,11 @@ class BidReminderAgent:
             logger.info("🔄 Executing LangGraph workflow...")
             config = {}
             
-            # Check environment and tracing settings
-            environment = os.getenv("ENVIRONMENT", "development").lower()
-            langsmith_enabled = os.getenv("LANGSMITH_TRACING") == "true" and os.getenv("LANGSMITH_API_KEY")
-            is_production = environment == "production"
+            # Check if we're in test mode to suppress tracing during mock runs
+            from sentry_config import is_test_mode_active
             
-            # Only enable LangSmith tracing in production OR when explicitly enabled in dev
-            if is_production or langsmith_enabled:
+            # Enable LangSmith tracing unless we're in test mode (mock runs)
+            if not is_test_mode_active() and os.getenv("LANGSMITH_TRACING") == "true" and os.getenv("LANGSMITH_API_KEY"):
                 # Create enhanced run configuration
                 run_name = self._create_run_name()
                 metadata = self._create_run_metadata()
@@ -1353,8 +1372,10 @@ class BidReminderAgent:
                     "run_name": run_name
                 }
                 logger.info(f"🔍 LangSmith tracing enabled: {run_name}")
+            elif is_test_mode_active():
+                logger.info("🔇 LangSmith tracing disabled (test mode - suppressing mock traces)")
             else:
-                logger.info("🔇 LangSmith tracing disabled (development mode without explicit enable)")
+                logger.info("🔇 LangSmith tracing disabled (not configured or not enabled)")
             
             result = await graph.ainvoke(initial_state, config=config)
             logger.info("✅ Workflow execution completed")
