@@ -1357,23 +1357,18 @@ class BidReminderAgent:
             # Check if we're in test mode to suppress tracing during mock runs
             from sentry_config import is_test_mode_active
             
-            # Enable LangSmith tracing unless we're in test mode (mock runs)
-            if not is_test_mode_active() and os.getenv("LANGSMITH_TRACING") == "true" and os.getenv("LANGSMITH_API_KEY"):
-                # Create enhanced run configuration
-                run_name = self._create_run_name()
-                metadata = self._create_run_metadata()
-                
-                config = {
-                    "configurable": {
-                        "thread_id": f"bid-reminder-{self.run_start_time.strftime('%Y%m%d-%H%M%S')}"
-                    },
-                    "tags": ["bid-reminder", "langgraph", "automation"],
-                    "metadata": metadata,
-                    "run_name": run_name
+            # Configure basic graph execution (tracing handled by @conditional_traceable decorators)
+            config = {
+                "configurable": {
+                    "thread_id": f"bid-reminder-{self.run_start_time.strftime('%Y%m%d-%H%M%S')}"
                 }
-                logger.info(f"🔍 LangSmith tracing enabled: {run_name}")
-            elif is_test_mode_active():
+            }
+            
+            # Log tracing status for transparency
+            if is_test_mode_active():
                 logger.info("🔇 LangSmith tracing disabled (test mode - suppressing mock traces)")
+            elif os.getenv("LANGSMITH_TRACING") == "true" and os.getenv("LANGSMITH_API_KEY"):
+                logger.info("🔍 LangSmith tracing enabled via @conditional_traceable decorators")
             else:
                 logger.info("🔇 LangSmith tracing disabled (not configured or not enabled)")
             
