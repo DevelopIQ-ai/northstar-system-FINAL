@@ -85,7 +85,7 @@ class BidReminderAgent:
     """Simple agent that checks for upcoming bids and sends reminder emails"""
     
     def __init__(self, test_project_id: Optional[str] = None, test_days_out: Optional[int] = None):
-        self.default_recipient = os.getenv("DEFAULT_EMAIL_RECIPIENT", "kush@developiq.ai")
+        self.default_recipient = os.getenv("DEFAULT_EMAIL_RECIPIENT", "evan@developiq.ai")
         self.days_before_bid = [0, 1, 2, 3, 7]
         self.urgency_threshold_days = int(os.getenv("URGENCY_THRESHOLD_DAYS", "5"))  # Days at which messages become urgent
         self.run_start_time = datetime.now()

@@ -116,7 +116,11 @@ DATABASE_URL=postgresql://user:password@host:port/database
 ```env
 LANGSMITH_TRACING=true  # Enable LangSmith workflow tracing
 LANGSMITH_API_KEY=your_langsmith_key
-ENVIRONMENT=development
+
+# Environment Configuration (affects Sentry behavior)
+ENVIRONMENT=development  # Options: development, dev, local, production
+                        # Defaults to 'development' for local runs
+                        # Set to 'production' on Railway/production deployment
 
 # Sentry Error Monitoring (Optional)
 SENTRY_DSN=your_sentry_dsn_url
