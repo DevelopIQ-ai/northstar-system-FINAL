@@ -6,9 +6,10 @@ Provides enhanced logging, tagging, and error tracking across all components
 import os
 import logging
 import threading
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any, List, Callable
 from datetime import datetime
 from contextlib import contextmanager
+from functools import wraps
 
 import sentry_sdk
 from sentry_sdk.integrations.fastapi import FastApiIntegration
@@ -20,6 +21,10 @@ from sentry_sdk.integrations.httpx import HttpxIntegration
 # Global flag to track test execution mode
 _test_mode_lock = threading.Lock()
 _test_execution_active = False
+
+# Thread-local storage for expected error tags
+import threading
+_thread_local = threading.local()
 
 
 class SentryOperations:
@@ -67,8 +72,8 @@ def init_sentry(component: str = "unknown") -> bool:
     if not sentry_dsn:
         return False
     
-    # Determine environment
-    environment = os.getenv("ENVIRONMENT", "production").lower()
+    # Determine environment - default to development for local runs
+    environment = os.getenv("ENVIRONMENT", "development").lower()
     is_development = environment in ["development", "dev", "local"]
     
     # Enhanced configuration based on environment
@@ -115,61 +120,57 @@ def init_sentry(component: str = "unknown") -> bool:
     return True
 
 
+def expected_test_error(func: Callable) -> Callable:
+    """Decorator to mark a function call as an expected test error that should be suppressed in Sentry"""
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        # Mark this thread as currently executing an expected test error
+        if not hasattr(_thread_local, 'expected_error_active'):
+            _thread_local.expected_error_active = False
+        
+        _thread_local.expected_error_active = True
+        try:
+            return func(*args, **kwargs)
+        finally:
+            _thread_local.expected_error_active = False
+    
+    @wraps(func)
+    async def async_wrapper(*args, **kwargs):
+        # Mark this thread as currently executing an expected test error
+        if not hasattr(_thread_local, 'expected_error_active'):
+            _thread_local.expected_error_active = False
+            
+        _thread_local.expected_error_active = True
+        try:
+            return await func(*args, **kwargs)
+        finally:
+            _thread_local.expected_error_active = False
+    
+    # Return async wrapper for async functions, regular wrapper for sync functions
+    import asyncio
+    if asyncio.iscoroutinefunction(func):
+        return async_wrapper
+    else:
+        return wrapper
+
+
 def _before_send_filter(event: Dict[str, Any], hint: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     """Filter events before sending to Sentry"""
-    # Check if we're in test execution mode and suppress expected test errors
+    # Check if we're currently in an expected test error
+    if hasattr(_thread_local, 'expected_error_active') and _thread_local.expected_error_active:
+        # This error is expected - suppress it
+        return None
+    
+    # Check if we're in test execution mode
     if _test_execution_active:
-        # During test execution, only allow critical unexpected errors through
-        # Suppress expected test errors but allow genuine test suite crashes
-        
-        # Check if this is a test-related error (expected)
+        # During test mode, only allow critical unexpected errors through
         event_message = str(event.get('message', ''))
-        if event.get('exception'):
-            for exception in event['exception'].get('values', []):
-                exception_type = exception.get('type', '').lower()
-                exception_value = str(exception.get('value', '')).lower()
-                
-                # Suppress expected test errors
-                expected_test_errors = [
-                    'graphapierror',        # Expected API errors in tests
-                    'buildingconnectederror', # Expected BC errors in tests  
-                    'httpxerror',           # Expected network errors in tests
-                    'timeoutexception',     # Expected timeout errors in tests
-                    'connecterror',         # Expected connection errors in tests
-                    'sslerror',             # Expected SSL errors in tests
-                    'invalidgrant',         # Expected auth errors in tests
-                    'unauthorized',         # Expected 401 errors in tests
-                    'forbidden',            # Expected 403 errors in tests
-                    'notfound',            # Expected 404 errors in tests
-                    'toolarge',            # Expected 413 errors in tests
-                    'ratelimit',           # Expected 429 errors in tests
-                    'jsondecodeerror'      # Expected JSON errors in tests
-                ]
-                
-                if any(error_type in exception_type or error_type in exception_value 
-                       for error_type in expected_test_errors):
-                    return None
-        
-        # Also check message content for test-related suppressions
-        test_suppressions = [
-            'test setup failed',
-            'mock',
-            'expected error',
-            'validation test',
-            'edge case test',
-            'tampering test',
-            'concurrent test'
-        ]
-        
-        if any(suppression in event_message.lower() for suppression in test_suppressions):
-            return None
         
         # Allow critical test suite crashes through (these are real problems)
         if event.get('level') in ['fatal', 'error']:
-            # Check if this looks like a genuine test suite failure
             critical_errors = [
                 'test suite crashed',
-                'failed to initialize',
+                'failed to initialize', 
                 'import error',
                 'syntax error',
                 'module not found',
@@ -177,8 +178,12 @@ def _before_send_filter(event: Dict[str, Any], hint: Dict[str, Any]) -> Optional
             ]
             
             if any(critical in event_message.lower() for critical in critical_errors):
-                # This is a real problem with the test suite itself
                 return event
+        
+        # Suppress all other errors during test mode unless explicitly tagged as expected
+        # This is a fail-safe - if someone forgot to use @expected_test_error decorator,
+        # we still suppress test noise
+        return None
     
     # Don't send debug level events
     if event.get('level') == 'debug':
@@ -498,14 +503,14 @@ def is_test_mode_active() -> bool:
     return _test_execution_active
 
 
-def force_capture_test_error(
+def capture_unexpected_test_error(
     exception: Exception,
     test_name: str,
     test_suite: str,
     severity: str = SentrySeverity.CRITICAL
 ) -> str:
     """
-    Force capture a test error even in test mode (for genuine test suite failures).
+    Force capture a test error that was NOT expected (genuine test suite failures).
     
     Args:
         exception: The exception that occurred
@@ -516,22 +521,29 @@ def force_capture_test_error(
     Returns:
         str: The Sentry event ID
     """
-    with sentry_sdk.configure_scope() as scope:
-        # Set test failure context
-        scope.set_tag("test_mode", "force_capture")
-        scope.set_tag("test_name", test_name)
-        scope.set_tag("test_suite", test_suite)
-        scope.set_tag("failure_type", "test_suite_failure")
-        
-        # Set detailed context
-        scope.set_context("test_failure_details", {
-            "test_name": test_name,
-            "test_suite": test_suite,
-            "error_type": type(exception).__name__,
-            "error_message": str(exception),
-            "test_mode_active": _test_execution_active,
-            "timestamp": datetime.utcnow().isoformat()
-        })
-        
-        # Force capture regardless of test mode
-        return sentry_sdk.capture_exception(exception)
+    # Temporarily disable expected error flag to ensure this gets captured
+    original_flag = getattr(_thread_local, 'expected_error_active', False)
+    _thread_local.expected_error_active = False
+    
+    try:
+        with sentry_sdk.configure_scope() as scope:
+            # Set test failure context
+            scope.set_tag("test_mode", "unexpected_failure")
+            scope.set_tag("test_name", test_name)
+            scope.set_tag("test_suite", test_suite)
+            scope.set_tag("failure_type", "genuine_test_failure")
+            
+            # Set detailed context
+            scope.set_context("test_failure_details", {
+                "test_name": test_name,
+                "test_suite": test_suite,
+                "error_type": type(exception).__name__,
+                "error_message": str(exception),
+                "test_mode_active": _test_execution_active,
+                "timestamp": datetime.utcnow().isoformat()
+            })
+            
+            # Force capture regardless of test mode
+            return sentry_sdk.capture_exception(exception)
+    finally:
+        _thread_local.expected_error_active = original_flag

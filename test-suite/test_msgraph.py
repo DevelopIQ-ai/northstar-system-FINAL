@@ -30,6 +30,9 @@ import shutil
 # Add parent directory to path for imports
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+# Import the expected_test_error decorator
+from sentry_config import expected_test_error
+
 from dotenv import load_dotenv
 import httpx
 import pytest
@@ -162,6 +165,7 @@ class MSGraphTestSuite:
         # Test 1.5: Request method validation
         await self._test_request_methods()
     
+    @expected_test_error
     async def _test_http_status_codes(self):
         """Test various HTTP status code responses"""
         start_time = datetime.now()
@@ -236,6 +240,7 @@ class MSGraphTestSuite:
         except Exception as e:
             self._record_test_result(test_name, False, f"Test setup failed: {str(e)}", start_time, severity="medium")
     
+    @expected_test_error
     async def _test_rate_limiting(self):
         """Test rate limiting response handling"""
         start_time = datetime.now()
@@ -271,6 +276,7 @@ class MSGraphTestSuite:
         except Exception as e:
             self._record_test_result(test_name, False, f"Test setup failed: {str(e)}", start_time, severity="medium")
     
+    @expected_test_error
     async def _test_timeout_handling(self):
         """Test timeout handling"""
         start_time = datetime.now()
@@ -582,6 +588,7 @@ class MSGraphTestSuite:
         # Test 3.4: Email address validation edge cases
         await self._test_email_validation_edge_cases()
     
+    @expected_test_error
     async def _test_invalid_email_addresses(self):
         """Test invalid email address handling"""
         start_time = datetime.now()

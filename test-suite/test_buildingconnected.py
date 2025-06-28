@@ -30,6 +30,9 @@ import shutil
 # Add parent directory to path for imports
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+# Import the expected_test_error decorator
+from sentry_config import expected_test_error
+
 from dotenv import load_dotenv
 import httpx
 import pytest
@@ -167,6 +170,7 @@ class BuildingConnectedTestSuite:
         # Test 1.5: Timeout handling
         await self._test_timeout_handling()
     
+    @expected_test_error
     async def _test_http_status_codes(self):
         """Test various HTTP status code responses"""
         start_time = datetime.now()
@@ -283,6 +287,7 @@ class BuildingConnectedTestSuite:
         except Exception as e:
             self._record_test_result(test_name, False, f"Test setup failed: {str(e)}", start_time, severity="medium")
     
+    @expected_test_error
     async def _test_rate_limiting(self):
         """Test rate limiting response handling"""
         start_time = datetime.now()
@@ -318,6 +323,7 @@ class BuildingConnectedTestSuite:
         except Exception as e:
             self._record_test_result(test_name, False, f"Test setup failed: {str(e)}", start_time, severity="medium")
     
+    @expected_test_error
     async def _test_timeout_handling(self):
         """Test timeout handling"""
         start_time = datetime.now()
@@ -369,6 +375,7 @@ class BuildingConnectedTestSuite:
         # Test 2.5: Boundary value testing
         await self._test_boundary_values()
     
+    @expected_test_error
     async def _test_invalid_project_ids(self):
         """Test invalid project ID handling"""
         start_time = datetime.now()
@@ -632,6 +639,7 @@ class BuildingConnectedTestSuite:
         # Test 3.4: Intermittent connectivity
         await self._test_intermittent_connectivity()
     
+    @expected_test_error
     async def _test_connection_timeout(self):
         """Test connection timeout handling"""
         start_time = datetime.now()

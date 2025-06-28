@@ -19,7 +19,7 @@ from sentry_config import (
     init_sentry, set_health_check_context, capture_exception_with_context,
     capture_message_with_context, add_breadcrumb, create_transaction,
     SentryOperations, SentryComponents, SentrySeverity, suppress_test_errors,
-    force_capture_test_error
+    capture_unexpected_test_error, expected_test_error
 )
 
 from fastapi import FastAPI, HTTPException, status, Request, Response
@@ -451,7 +451,7 @@ async def send_test_results_email(test_results: Dict[str, Any]) -> bool:
         token_manager = create_token_manager_from_env()
         ms_client = MSGraphClient(token_manager)
         
-        recipients = "evan@developiq.ai,kush@developiq.ai"
+        recipients = "evan@developiq.ai"
         subject = f"🏥 Northstar System Health Check Report - {test_results['overall_summary']['overall_status']}"
         
         # Create comprehensive HTML email
@@ -692,7 +692,7 @@ async def health_check():
                 logger.error(f"💥 Test suite crashed unexpectedly: {test_suite_error}")
                 
                 # Force capture this error even though we're in test mode
-                force_capture_test_error(
+                capture_unexpected_test_error(
                     test_suite_error,
                     test_name="comprehensive_test_suite",
                     test_suite="health_check_test_runner"
@@ -811,33 +811,33 @@ async def health_check():
                 extra_context={"stage": "fallback_token_refresh"}
             )
     
-        status = "healthy" if (outlook_configured and building_configured) else "degraded"
-        
-        # Final health check status
-        set_health_check_context("final", status)
-        
-        add_breadcrumb(
-            message="Health check completed",
-            category="health_check",
-            level="info",
-            data={
-                "status": status,
-                "test_suite_executed": test_suite_executed,
-                "email_report_sent": email_report_sent
-            }
-        )
-        
-        transaction.set_data("health_status", status)
-        transaction.set_data("test_suite_executed", test_suite_executed)
-        
-        return HealthResponse(
-            status=status,
-            outlook_configured=outlook_configured,
-            building_configured=building_configured,
-            test_suite_executed=test_suite_executed,
-            test_results_summary=test_results_summary,
-            email_report_sent=email_report_sent
-        )
+    status = "healthy" if (outlook_configured and building_configured) else "degraded"
+    
+    # Final health check status
+    set_health_check_context("final", status)
+    
+    add_breadcrumb(
+        message="Health check completed",
+        category="health_check",
+        level="info",
+        data={
+            "status": status,
+            "test_suite_executed": test_suite_executed,
+            "email_report_sent": email_report_sent
+        }
+    )
+    
+    transaction.set_data("health_status", status)
+    transaction.set_data("test_suite_executed", test_suite_executed)
+    
+    return HealthResponse(
+        status=status,
+        outlook_configured=outlook_configured,
+        building_configured=building_configured,
+        test_suite_executed=test_suite_executed,
+        test_results_summary=test_results_summary,
+        email_report_sent=email_report_sent
+    )
 
 
 @app.post("/run-bid-reminder", response_model=BidReminderResponse, summary="Run bid reminder workflow")
