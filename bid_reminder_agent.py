@@ -22,6 +22,27 @@ from langgraph.graph import StateGraph, START, END
 from pydantic import BaseModel
 from typing_extensions import TypedDict
 from langsmith import traceable
+from functools import wraps
+
+def conditional_traceable(name: str, tags: List[str] = None):
+    """
+    Conditional decorator that only applies @traceable in production or when explicitly enabled.
+    Prevents mock traces from polluting LangSmith dashboard during tests.
+    """
+    def decorator(func):
+        # Check environment and tracing settings
+        environment = os.getenv("ENVIRONMENT", "development").lower()
+        langsmith_enabled = os.getenv("LANGSMITH_TRACING") == "true" and os.getenv("LANGSMITH_API_KEY")
+        is_production = environment == "production"
+        
+        # Only apply @traceable in production OR when explicitly enabled in dev
+        if is_production or langsmith_enabled:
+            return traceable(name=name, tags=tags or [])(func)
+        else:
+            # Return function unchanged (no tracing)
+            return func
+    
+    return decorator
 
 from auth.auth_helpers import (
     create_token_manager_from_env,
@@ -80,7 +101,6 @@ class BidReminderState(TypedDict):
     workflow_successful: bool
     result_message: Optional[str]
 
-
 class BidReminderAgent:
     """Simple agent that checks for upcoming bids and sends reminder emails"""
     
@@ -132,7 +152,7 @@ class BidReminderAgent:
             
         return metadata
     
-    @traceable(name="🔐 Initialize Authentication", tags=["auth", "setup"])
+    @conditional_traceable(name="🔐 Initialize Authentication", tags=["auth", "setup"])
     async def initialize_auth_node(self, state: BidReminderState) -> BidReminderState:
         """Initialize authentication for both Outlook and BuildingConnected"""
         # Set workflow context for this node
@@ -222,7 +242,7 @@ class BidReminderAgent:
                 "reminder_email_sent": False
             }
     
-    @traceable(name="📋 Check Upcoming Projects", tags=["projects", "data-fetch"])
+    @conditional_traceable(name="📋 Check Upcoming Projects", tags=["projects", "data-fetch"])
     async def check_upcoming_projects_node(self, state: BidReminderState) -> BidReminderState:
         """Check BuildingConnected for projects due in 5-10 days or specific project"""
         # Set workflow context for this node
@@ -369,6 +389,7 @@ class BidReminderAgent:
                 "workflow_successful": False
             }
     
+    @conditional_traceable(name="📨 Get Bidding Invitations", tags=["invitations", "data-fetch"])
     async def get_bidding_invitations_node(self, state: BidReminderState) -> BidReminderState:
         """Get bidding invitations for each upcoming project"""
         # Set workflow context for this node  
@@ -474,7 +495,7 @@ class BidReminderAgent:
                 "workflow_successful": False
             }
     
-    @traceable(name="📧 Send Invitation Emails", tags=["email", "invitations"])
+    @conditional_traceable(name="📧 Send Invitation Emails", tags=["email", "invitations"])
     async def send_reminder_email_node(self, state: BidReminderState) -> BidReminderState:
         """Send personalized emails to each bidding invitation"""
         # Set workflow context for this node
@@ -671,7 +692,7 @@ class BidReminderAgent:
                 "error_message": f"Email sending failed: {str(e)}"
             }
     
-    @traceable(name="🏁 Finalize Results", tags=["finalize", "summary"])
+    @conditional_traceable(name="🏁 Finalize Results", tags=["finalize", "summary"])
     async def finalize_result_node(self, state: BidReminderState) -> BidReminderState:
         """Finalize the workflow result - showing project data, bidding invitations, and email status"""
         # Set workflow context for finalization
@@ -773,7 +794,7 @@ class BidReminderAgent:
             "workflow_successful": workflow_successful
         }
     
-    @traceable(name="🔄 Prepare Next Run", tags=["token-refresh", "proactive"])
+    @conditional_traceable(name="🔄 Prepare Next Run", tags=["token-refresh", "proactive"])
     async def prepare_next_run_node(self, state: BidReminderState) -> BidReminderState:
         """Proactively refresh BuildingConnected token for next run"""
         logger.info("🔄 Starting proactive token refresh for next run")
@@ -1308,10 +1329,17 @@ class BidReminderAgent:
             }
             logger.info("✅ Initial state created")
             
-            # Execute workflow with enhanced tracing
+            # Execute workflow with conditional tracing
             logger.info("🔄 Executing LangGraph workflow...")
             config = {}
-            if os.getenv("LANGSMITH_TRACING") == "true" and os.getenv("LANGSMITH_API_KEY"):
+            
+            # Check environment and tracing settings
+            environment = os.getenv("ENVIRONMENT", "development").lower()
+            langsmith_enabled = os.getenv("LANGSMITH_TRACING") == "true" and os.getenv("LANGSMITH_API_KEY")
+            is_production = environment == "production"
+            
+            # Only enable LangSmith tracing in production OR when explicitly enabled in dev
+            if is_production or langsmith_enabled:
                 # Create enhanced run configuration
                 run_name = self._create_run_name()
                 metadata = self._create_run_metadata()
@@ -1324,7 +1352,9 @@ class BidReminderAgent:
                     "metadata": metadata,
                     "run_name": run_name
                 }
-                logger.info(f"🔍 Enhanced LangSmith tracing enabled: {run_name}")
+                logger.info(f"🔍 LangSmith tracing enabled: {run_name}")
+            else:
+                logger.info("🔇 LangSmith tracing disabled (development mode without explicit enable)")
             
             result = await graph.ainvoke(initial_state, config=config)
             logger.info("✅ Workflow execution completed")
@@ -1359,8 +1389,6 @@ class BidReminderAgent:
             
             return result
 
-
-# Convenience function
 async def run_bid_reminder(project_id: Optional[str] = None, days_out: Optional[int] = None) -> dict:
     """Simple function to run bid reminder workflow with optional test parameters"""
     logger.info("📞 Called run_bid_reminder() convenience function")
